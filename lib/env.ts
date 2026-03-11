@@ -1,4 +1,8 @@
+import { config } from "dotenv";
 import { z } from "zod";
+
+config({ path: ".env.local" });
+config();
 
 const envSchema = z
   .object({

@@ -1,3 +1,7 @@
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+
+import { db } from "@/db/client";
+import { accounts, dailySnapshots, holdings, prices, snapshotItems, syncRunEvents, syncRuns } from "@/db/schema";
 import { env } from "@/lib/env";
 import { fetchCryptoPrices } from "@/providers/coingecko";
 import { fetchCryptoPricesMock } from "@/providers/coingecko.mock";
@@ -5,6 +9,7 @@ import { fetchPlaidBalances } from "@/providers/plaid";
 import { fetchPlaidBalancesMock } from "@/providers/plaid.mock";
 import { fetchSnapTradePositions } from "@/providers/snaptrade";
 import { fetchSnapTradePositionsMock } from "@/providers/snaptrade.mock";
+import type { AccountBalance, Position } from "@/providers/types";
 
 export type SyncEvent = {
   timestamp: string;
@@ -19,46 +24,478 @@ export type SyncSummary = {
 };
 
 export type SyncRunResult = {
-  status: "completed" | "failed";
+  runId: string;
+  status: "pending" | "running" | "completed" | "failed";
   events: SyncEvent[];
-  summary: SyncSummary;
+  summary: SyncSummary | null;
 };
 
-export async function runFullSync(): Promise<SyncRunResult> {
-  const events: SyncEvent[] = [];
-  const now = () => new Date().toISOString();
-  events.push({ timestamp: now(), message: "Starting sync job" });
+type SyncTrigger = "manual" | "scheduled" | "system";
+type SyncStatus = "pending" | "running" | "completed" | "failed";
 
-  const plaid = env.MOCK_MODE ? await fetchPlaidBalancesMock() : await fetchPlaidBalances();
-  events.push({ timestamp: now(), message: "Fetched Plaid bank balances" });
+const inFlightRuns = new Map<string, Promise<void>>();
 
-  const broker = env.MOCK_MODE
-    ? await fetchSnapTradePositionsMock()
-    : await fetchSnapTradePositions();
-  events.push({ timestamp: now(), message: "Fetched Robinhood portfolio" });
+function nowIso() {
+  return new Date().toISOString();
+}
 
-  const cryptoSymbols = ["BTC", "ETH"];
-  const cryptoPrices = env.MOCK_MODE
-    ? await fetchCryptoPricesMock(cryptoSymbols)
-    : await fetchCryptoPrices(cryptoSymbols);
-  events.push({ timestamp: now(), message: "Fetched crypto prices" });
+function toDateKey(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
 
-  const cash = plaid.data.reduce((sum, account) => sum + account.balance, 0);
-  const stocks = broker.data
-    .filter((position) => position.assetClass === "stock")
-    .reduce((sum, position) => sum + position.value, 0);
-  const crypto = cryptoPrices.data.reduce((sum, price) => {
-    const quantity = price.symbol === "BTC" ? 0.18 : price.symbol === "ETH" ? 2.4 : 0;
-    return sum + price.price * quantity;
-  }, 0);
+function toMoney(value: number) {
+  return value.toFixed(2);
+}
 
-  const summary = { cash, stocks, crypto, total: cash + stocks + crypto };
-
-  events.push({ timestamp: now(), message: "Sync complete" });
+async function appendEvent(
+  syncRunId: string,
+  order: number,
+  message: string,
+  provider?: "plaid" | "snaptrade" | "coingecko",
+) {
+  const created = new Date();
+  await db.insert(syncRunEvents).values({
+    syncRunId,
+    provider,
+    message,
+    eventOrder: order,
+    level: "info",
+    createdAt: created,
+  });
 
   return {
-    status: "completed",
-    events,
+    timestamp: created.toISOString(),
+    message,
+  };
+}
+
+async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
+  for (const account of data) {
+    await db
+      .insert(accounts)
+      .values({
+        userId,
+        providerAccountId: account.providerAccountId,
+        institutionName: account.name.includes("TD")
+          ? "TD Bank"
+          : account.name.includes("BASK")
+            ? "BASK Bank"
+            : "Mock Institution",
+        name: account.name,
+        type: account.type,
+        currency: account.currency,
+        lastBalance: toMoney(account.balance),
+        balanceAsOf: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [accounts.userId, accounts.providerAccountId],
+        set: {
+          institutionName: account.name.includes("TD")
+            ? "TD Bank"
+            : account.name.includes("BASK")
+              ? "BASK Bank"
+              : "Mock Institution",
+          name: account.name,
+          type: account.type,
+          currency: account.currency,
+          lastBalance: toMoney(account.balance),
+          balanceAsOf: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+  }
+}
+
+async function upsertBrokerageHoldings(userId: string, positions: Position[]) {
+  const brokerageAccount = await db.query.accounts.findFirst({
+    where: and(eq(accounts.userId, userId), eq(accounts.type, "brokerage")),
+  });
+
+  if (!brokerageAccount) {
+    return;
+  }
+
+  await db
+    .delete(holdings)
+    .where(and(eq(holdings.userId, userId), eq(holdings.accountId, brokerageAccount.id)));
+
+  if (!positions.length) {
+    return;
+  }
+
+  await db.insert(holdings).values(
+    positions.map((position) => ({
+      userId,
+      accountId: brokerageAccount.id,
+      symbol: position.symbol,
+      name: position.symbol,
+      assetClass: position.assetClass,
+      quantity: position.quantity.toFixed(8),
+      lastPrice: position.price.toFixed(6),
+      marketValue: toMoney(position.value),
+      isManual: false,
+    })),
+  );
+
+  const brokerageValue = positions.reduce((sum, position) => sum + position.value, 0);
+  await db
+    .update(accounts)
+    .set({
+      lastBalance: toMoney(brokerageValue),
+      balanceAsOf: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(accounts.id, brokerageAccount.id));
+}
+
+async function refreshCryptoValuations(userId: string) {
+  const cryptoHoldings = await db.query.holdings.findMany({
+    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+  });
+
+  if (!cryptoHoldings.length) {
+    return { symbols: [] as string[] };
+  }
+
+  const symbols = [...new Set(cryptoHoldings.map((holding) => holding.symbol.toUpperCase()))];
+  const priceResult = env.MOCK_MODE
+    ? await fetchCryptoPricesMock(symbols)
+    : await fetchCryptoPrices(symbols);
+  const priceMap = new Map(priceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
+
+  for (const holding of cryptoHoldings) {
+    const matchedPrice = priceMap.get(holding.symbol.toUpperCase());
+    if (!matchedPrice) continue;
+
+    const quantity = Number(holding.quantity);
+    const marketValue = matchedPrice * quantity;
+
+    await db
+      .update(holdings)
+      .set({
+        lastPrice: matchedPrice.toFixed(6),
+        marketValue: toMoney(marketValue),
+        updatedAt: new Date(),
+      })
+      .where(eq(holdings.id, holding.id));
+
+    await db.insert(prices).values({
+      symbol: holding.symbol.toUpperCase(),
+      assetClass: "crypto",
+      currency: "USD",
+      price: matchedPrice.toFixed(6),
+      pricedAt: new Date(),
+      source: "coingecko",
+    });
+  }
+
+  const cryptoAccounts = await db.query.accounts.findMany({
+    where: and(eq(accounts.userId, userId), eq(accounts.type, "crypto_wallet")),
+  });
+
+  for (const account of cryptoAccounts) {
+    const accountHoldings = await db.query.holdings.findMany({
+      where: and(eq(holdings.userId, userId), eq(holdings.accountId, account.id)),
+    });
+    const accountTotal = accountHoldings.reduce((sum, item) => sum + Number(item.marketValue), 0);
+    await db
+      .update(accounts)
+      .set({
+        lastBalance: toMoney(accountTotal),
+        balanceAsOf: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(accounts.id, account.id));
+  }
+
+  return { symbols };
+}
+
+async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncSummary | null> {
+  const cashRows = await db.query.accounts.findMany({
+    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+  });
+  const stockRows = await db.query.holdings.findMany({
+    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
+  });
+  const cryptoRows = await db.query.holdings.findMany({
+    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+  });
+
+  const cash = cashRows.reduce((sum, row) => sum + Number(row.lastBalance), 0);
+  const stocks = stockRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
+  const crypto = cryptoRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
+  const total = cash + stocks + crypto;
+
+  const dateKey = toDateKey(new Date());
+  const previous = await db
+    .select({ total: dailySnapshots.totalNetWorth })
+    .from(dailySnapshots)
+    .where(eq(dailySnapshots.userId, userId))
+    .orderBy(desc(dailySnapshots.snapshotDate))
+    .limit(1);
+  const prevTotal = previous[0] ? Number(previous[0].total) : total;
+  const dailyChange = total - prevTotal;
+
+  await db
+    .insert(dailySnapshots)
+    .values({
+      userId,
+      snapshotDate: dateKey,
+      cashTotal: toMoney(cash),
+      stocksTotal: toMoney(stocks),
+      cryptoTotal: toMoney(crypto),
+      totalNetWorth: toMoney(total),
+      dailyChange: toMoney(dailyChange),
+      syncRunId,
+    })
+    .onConflictDoUpdate({
+      target: [dailySnapshots.userId, dailySnapshots.snapshotDate],
+      set: {
+        cashTotal: toMoney(cash),
+        stocksTotal: toMoney(stocks),
+        cryptoTotal: toMoney(crypto),
+        totalNetWorth: toMoney(total),
+        dailyChange: toMoney(dailyChange),
+        syncRunId,
+        createdAt: new Date(),
+      },
+    });
+
+  const snapshot = await db.query.dailySnapshots.findFirst({
+    where: and(eq(dailySnapshots.userId, userId), eq(dailySnapshots.snapshotDate, dateKey)),
+  });
+  if (!snapshot) return null;
+
+  await db.delete(snapshotItems).where(eq(snapshotItems.snapshotId, snapshot.id));
+
+  if (cashRows.length) {
+    await db.insert(snapshotItems).values(
+      cashRows.map((row) => ({
+        snapshotId: snapshot.id,
+        category: "cash_account" as const,
+        accountId: row.id,
+        label: row.name,
+        value: row.lastBalance,
+        currency: row.currency,
+      })),
+    );
+  }
+  if (stockRows.length) {
+    await db.insert(snapshotItems).values(
+      stockRows.map((row) => ({
+        snapshotId: snapshot.id,
+        category: "brokerage_position" as const,
+        accountId: row.accountId,
+        holdingId: row.id,
+        label: row.name,
+        symbol: row.symbol,
+        quantity: row.quantity,
+        price: row.lastPrice,
+        value: row.marketValue,
+      })),
+    );
+  }
+  if (cryptoRows.length) {
+    await db.insert(snapshotItems).values(
+      cryptoRows.map((row) => ({
+        snapshotId: snapshot.id,
+        category: "crypto_holding" as const,
+        accountId: row.accountId,
+        holdingId: row.id,
+        label: row.name,
+        symbol: row.symbol,
+        quantity: row.quantity,
+        price: row.lastPrice,
+        value: row.marketValue,
+      })),
+    );
+  }
+
+  return { cash, stocks, crypto, total };
+}
+
+async function executeFullSync(syncRunId: string, userId: string): Promise<SyncRunResult> {
+  const events: SyncEvent[] = [];
+  let order = 1;
+  let summary: SyncSummary | null = null;
+
+  const pushEvent = async (
+    message: string,
+    provider?: "plaid" | "snaptrade" | "coingecko",
+  ) => {
+    const event = await appendEvent(syncRunId, order, message, provider);
+    order += 1;
+    events.push(event);
+  };
+
+  await pushEvent("Starting sync job");
+
+  try {
+    try {
+      await pushEvent("Fetching Plaid bank balances", "plaid");
+      const plaid = env.MOCK_MODE ? await fetchPlaidBalancesMock() : await fetchPlaidBalances();
+      await upsertCashAccounts(userId, plaid.data);
+      for (const account of plaid.data) {
+        await pushEvent(`Saved ${account.name} balance`, "plaid");
+      }
+    } catch (error) {
+      await pushEvent(
+        `Plaid sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "plaid",
+      );
+    }
+
+    try {
+      await pushEvent("Fetching Robinhood portfolio", "snaptrade");
+      const broker = env.MOCK_MODE
+        ? await fetchSnapTradePositionsMock()
+        : await fetchSnapTradePositions();
+      await upsertBrokerageHoldings(userId, broker.data);
+      await pushEvent(`Retrieved ${broker.data.length} positions`, "snaptrade");
+    } catch (error) {
+      await pushEvent(
+        `Robinhood sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "snaptrade",
+      );
+    }
+
+    try {
+      await pushEvent("Fetching crypto prices", "coingecko");
+      const result = await refreshCryptoValuations(userId);
+      await pushEvent(`Updated ${result.symbols.length} crypto prices`, "coingecko");
+    } catch (error) {
+      await pushEvent(
+        `Crypto sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        "coingecko",
+      );
+    }
+
+    await pushEvent("Calculating net worth");
+    summary = await persistSnapshot(userId, syncRunId);
+    await pushEvent("Saving snapshot");
+
+    await db
+      .update(syncRuns)
+      .set({
+        status: "completed",
+        completedAt: new Date(),
+        errorMessage: null,
+      })
+      .where(eq(syncRuns.id, syncRunId));
+    await pushEvent("Sync complete");
+
+    return {
+      runId: syncRunId,
+      status: "completed",
+      events,
+      summary,
+    };
+  } catch (error) {
+    await db
+      .update(syncRuns)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        errorMessage: error instanceof Error ? error.message : "Unknown sync error",
+      })
+      .where(eq(syncRuns.id, syncRunId));
+    await pushEvent("Sync failed");
+    return {
+      runId: syncRunId,
+      status: "failed",
+      events,
+      summary,
+    };
+  }
+}
+
+export async function createSyncRun(userId: string, trigger: SyncTrigger = "manual") {
+  const running = await db.query.syncRuns.findFirst({
+    where: and(eq(syncRuns.userId, userId), eq(syncRuns.status, "running")),
+    orderBy: (table, { desc: descFn }) => [descFn(table.startedAt)],
+  });
+
+  if (running) {
+    return { runId: running.id, status: running.status as SyncStatus, started: false };
+  }
+
+  const [created] = await db
+    .insert(syncRuns)
+    .values({
+      userId,
+      status: "running",
+      trigger,
+      isMock: env.MOCK_MODE,
+      startedAt: new Date(),
+    })
+    .returning();
+
+  return { runId: created.id, status: created.status as SyncStatus, started: true };
+}
+
+export async function runFullSync(userId: string, trigger: SyncTrigger = "manual") {
+  const run = await createSyncRun(userId, trigger);
+  if (run.started) {
+    const promise = executeFullSync(run.runId, userId).then(() => undefined);
+    inFlightRuns.set(run.runId, promise);
+    await promise.finally(() => inFlightRuns.delete(run.runId));
+  }
+  return getSyncRunProgress(run.runId);
+}
+
+export async function triggerSyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
+  const run = await createSyncRun(userId, trigger);
+  if (run.started) {
+    const promise = executeFullSync(run.runId, userId).then(() => undefined);
+    inFlightRuns.set(run.runId, promise);
+    void promise.finally(() => inFlightRuns.delete(run.runId));
+  }
+  return run;
+}
+
+export async function getSyncRunProgress(runId: string): Promise<SyncRunResult> {
+  const run = await db.query.syncRuns.findFirst({
+    where: eq(syncRuns.id, runId),
+  });
+  if (!run) {
+    return {
+      runId,
+      status: "failed",
+      events: [{ timestamp: nowIso(), message: "Sync run not found" }],
+      summary: null,
+    };
+  }
+
+  const events = await db
+    .select({
+      timestamp: syncRunEvents.createdAt,
+      message: syncRunEvents.message,
+    })
+    .from(syncRunEvents)
+    .where(eq(syncRunEvents.syncRunId, runId))
+    .orderBy(asc(syncRunEvents.eventOrder));
+
+  const snapshot = await db.query.dailySnapshots.findFirst({
+    where: eq(dailySnapshots.syncRunId, runId),
+    orderBy: (table, { desc: descFn }) => [descFn(table.createdAt)],
+  });
+  const summary = snapshot
+    ? {
+        cash: Number(snapshot.cashTotal),
+        stocks: Number(snapshot.stocksTotal),
+        crypto: Number(snapshot.cryptoTotal),
+        total: Number(snapshot.totalNetWorth),
+      }
+    : null;
+
+  return {
+    runId,
+    status: run.status,
+    events: events.map((event) => ({
+      timestamp: event.timestamp?.toISOString() ?? nowIso(),
+      message: event.message,
+    })),
     summary,
   };
 }

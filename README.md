@@ -2,14 +2,19 @@
 
 Production-focused personal finance dashboard scaffold.
 
-This repository is currently at **Phase 1**:
+This repository is currently at **Phase 3**:
 
 - Next.js 15 + TypeScript + Tailwind CSS + shadcn/ui configured
 - TanStack Query configured
 - Drizzle + Neon wiring configured
 - Netlify Functions + scheduled function scaffold configured
 - Mock-first provider architecture scaffolded (`plaid`, `snaptrade`, `coingecko`)
-- Initial dashboard shell with manual mock sync
+- Normalized financial data model and generated Drizzle migration
+- Seed script for demo user, accounts, holdings, snapshots, and sync events
+- Dashboard + history views backed by daily snapshot data
+- Central sync engine persists `sync_runs`, `sync_run_events`, and `daily_snapshots`
+- Manual refresh now creates a sync job and polls live progress
+- `/sync-logs` page now shows recent persisted sync runs
 
 ## Tech Stack
 
@@ -48,7 +53,7 @@ lib/
 2. Fill required values:
    - `DATABASE_URL`
    - `APP_URL`
-   - `MOCK_MODE` (`true` for local Phase 1)
+   - `MOCK_MODE` (`true` for local mock-first development)
 
 ## Local Development
 
@@ -66,6 +71,8 @@ npm run db:generate
 npm run db:migrate
 npm run db:seed
 ```
+
+If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeholder.
 
 ## Mock Mode
 
@@ -105,4 +112,4 @@ git push -u origin main
 
 ## Next Phase
 
-Phase 2 will add normalized full schema, migrations, seed financial data, and richer dashboard UI.
+Phase 4 will add expanded charts and deeper drill-down pages for accounts/holdings trends.
