@@ -1,36 +1,108 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WealthBoard
 
-## Getting Started
+Production-focused personal finance dashboard scaffold.
 
-First, run the development server:
+This repository is currently at **Phase 1**:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Next.js 15 + TypeScript + Tailwind CSS + shadcn/ui configured
+- TanStack Query configured
+- Drizzle + Neon wiring configured
+- Netlify Functions + scheduled function scaffold configured
+- Mock-first provider architecture scaffolded (`plaid`, `snaptrade`, `coingecko`)
+- Initial dashboard shell with manual mock sync
+
+## Tech Stack
+
+- Frontend: Next.js 15, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Recharts
+- Backend: Netlify Functions
+- Database: Neon Postgres + Drizzle ORM
+- Validation: Zod
+- Scheduling: Netlify Scheduled Functions (scaffolded in Phase 1)
+- Deployment: Netlify
+
+## Project Structure
+
+```text
+app/
+components/
+providers/
+services/
+db/
+drizzle/
+netlify/functions/
+lib/
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Security Principles
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Bank username/password storage is prohibited.
+- Financial account integrations are read-only.
+- No transaction endpoints are implemented.
+- Secrets must only live in environment variables.
+- Frontend code does not receive provider secret keys.
+- `MOCK_MODE=true` is the default development path.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Setup
 
-## Learn More
+1. Copy `.env.example` to `.env.local`.
+2. Fill required values:
+   - `DATABASE_URL`
+   - `APP_URL`
+   - `MOCK_MODE` (`true` for local Phase 1)
 
-To learn more about Next.js, take a look at the following resources:
+## Local Development
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+App runs at [http://localhost:3000](http://localhost:3000).
 
-## Deploy on Vercel
+## Database Commands
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Mock Mode
+
+- Keep `MOCK_MODE=true`.
+- Provider files are split into real + mock implementations:
+  - `providers/plaid.ts` and `providers/plaid.mock.ts`
+  - `providers/snaptrade.ts` and `providers/snaptrade.mock.ts`
+  - `providers/coingecko.ts` and `providers/coingecko.mock.ts`
+- The dashboard sync API uses mock providers while in mock mode.
+
+## Netlify (Scaffolded)
+
+- `netlify.toml` is configured for Next.js + Functions.
+- Function stubs:
+  - `netlify/functions/manual-sync.ts`
+  - `netlify/functions/scheduled-sync.ts`
+- Schedule hardening and duplicate-run protection are implemented in later phases.
+
+## GitHub Push Instructions
+
+```bash
+git init
+git add .
+git commit -m "chore: scaffold WealthBoard phase 1 foundation"
+git branch -M main
+git remote add origin <your-github-repo-url>
+git push -u origin main
+```
+
+## Netlify Deploy Instructions
+
+1. Push repository to GitHub.
+2. In Netlify, click **Add new site** -> **Import an existing project**.
+3. Select the GitHub repository.
+4. Configure environment variables from `.env.example`.
+5. Deploy.
+
+## Next Phase
+
+Phase 2 will add normalized full schema, migrations, seed financial data, and richer dashboard UI.
