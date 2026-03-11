@@ -3,12 +3,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { accounts, dailySnapshots, holdings, prices, snapshotItems, syncRunEvents, syncRuns } from "@/db/schema";
 import { env } from "@/lib/env";
-import { fetchCryptoPrices } from "@/providers/coingecko";
-import { fetchCryptoPricesMock } from "@/providers/coingecko.mock";
-import { fetchPlaidBalances } from "@/providers/plaid";
-import { fetchPlaidBalancesMock } from "@/providers/plaid.mock";
-import { fetchSnapTradePositions } from "@/providers/snaptrade";
-import { fetchSnapTradePositionsMock } from "@/providers/snaptrade.mock";
+import { getProviderAdapters } from "@/providers/adapters";
 import type { AccountBalance, Position } from "@/providers/types";
 
 export type SyncEvent = {
@@ -41,6 +36,15 @@ function nowIso() {
 
 function toDateKey(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function getNyDateKey(value: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
 }
 
 function toMoney(value: number) {
@@ -158,9 +162,8 @@ async function refreshCryptoValuations(userId: string) {
   }
 
   const symbols = [...new Set(cryptoHoldings.map((holding) => holding.symbol.toUpperCase()))];
-  const priceResult = env.MOCK_MODE
-    ? await fetchCryptoPricesMock(symbols)
-    : await fetchCryptoPrices(symbols);
+  const adapters = getProviderAdapters();
+  const priceResult = await adapters.coingecko.fetchPrices(symbols);
   const priceMap = new Map(priceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
 
   for (const holding of cryptoHoldings) {
@@ -319,6 +322,7 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
   const events: SyncEvent[] = [];
   let order = 1;
   let summary: SyncSummary | null = null;
+  const adapters = getProviderAdapters();
 
   const pushEvent = async (
     message: string,
@@ -334,7 +338,7 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
   try {
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
-      const plaid = env.MOCK_MODE ? await fetchPlaidBalancesMock() : await fetchPlaidBalances();
+      const plaid = await adapters.plaid.fetchBalances();
       await upsertCashAccounts(userId, plaid.data);
       for (const account of plaid.data) {
         await pushEvent(`Saved ${account.name} balance`, "plaid");
@@ -348,9 +352,7 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
 
     try {
       await pushEvent("Fetching Robinhood portfolio", "snaptrade");
-      const broker = env.MOCK_MODE
-        ? await fetchSnapTradePositionsMock()
-        : await fetchSnapTradePositions();
+      const broker = await adapters.snaptrade.fetchPositions();
       await upsertBrokerageHoldings(userId, broker.data);
       await pushEvent(`Retrieved ${broker.data.length} positions`, "snaptrade");
     } catch (error) {
@@ -417,7 +419,47 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
   });
 
   if (running) {
-    return { runId: running.id, status: running.status as SyncStatus, started: false };
+    return {
+      runId: running.id,
+      status: running.status as SyncStatus,
+      started: false,
+      skipped: true,
+      skipReason: "A sync run is already in progress.",
+    };
+  }
+
+  if (trigger === "scheduled") {
+    const recentScheduledRuns = await db
+      .select({
+        id: syncRuns.id,
+        status: syncRuns.status,
+        startedAt: syncRuns.startedAt,
+      })
+      .from(syncRuns)
+      .where(and(eq(syncRuns.userId, userId), eq(syncRuns.trigger, "scheduled")))
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(20);
+
+    const nyToday = getNyDateKey(new Date());
+    const alreadyRanToday = recentScheduledRuns.find((run) => {
+      const key = getNyDateKey(run.startedAt);
+      return (
+        key === nyToday &&
+        (run.status === "running" ||
+          run.status === "pending" ||
+          run.status === "completed")
+      );
+    });
+
+    if (alreadyRanToday) {
+      return {
+        runId: alreadyRanToday.id,
+        status: alreadyRanToday.status as SyncStatus,
+        started: false,
+        skipped: true,
+        skipReason: "Scheduled sync already ran for current America/New_York day.",
+      };
+    }
   }
 
   const [created] = await db

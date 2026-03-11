@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   accounts,
+  connections,
   dailySnapshots,
   holdings,
   snapshotItems,
@@ -261,5 +262,87 @@ export async function getHoldingsOverview(userId: string) {
     }));
   } catch {
     return [];
+  }
+}
+
+export async function getConnectionsOverview(userId: string) {
+  try {
+    return await db
+      .select({
+        id: connections.id,
+        provider: connections.provider,
+        displayName: connections.displayName,
+        status: connections.status,
+        lastSyncedAt: connections.lastSyncedAt,
+      })
+      .from(connections)
+      .where(eq(connections.userId, userId))
+      .orderBy(asc(connections.provider));
+  } catch {
+    return [];
+  }
+}
+
+export async function getSettingsOverview(userId: string) {
+  try {
+    const [latestScheduled] = await db
+      .select({
+        id: syncRuns.id,
+        status: syncRuns.status,
+        startedAt: syncRuns.startedAt,
+        completedAt: syncRuns.completedAt,
+        errorMessage: syncRuns.errorMessage,
+      })
+      .from(syncRuns)
+      .where(and(eq(syncRuns.userId, userId), eq(syncRuns.trigger, "scheduled")))
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(1);
+
+    const [latestManual] = await db
+      .select({
+        id: syncRuns.id,
+        status: syncRuns.status,
+        startedAt: syncRuns.startedAt,
+        completedAt: syncRuns.completedAt,
+        errorMessage: syncRuns.errorMessage,
+      })
+      .from(syncRuns)
+      .where(and(eq(syncRuns.userId, userId), eq(syncRuns.trigger, "manual")))
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(1);
+
+    const nextNyNine = (() => {
+      const now = new Date();
+      const nyNow = new Date(
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(now),
+      );
+      const next = new Date(nyNow);
+      next.setHours(9, 0, 0, 0);
+      if (nyNow >= next) {
+        next.setDate(next.getDate() + 1);
+      }
+      return next.toISOString();
+    })();
+
+    return {
+      latestScheduled: latestScheduled ?? null,
+      latestManual: latestManual ?? null,
+      nextExpectedNyNine: nextNyNine,
+    };
+  } catch {
+    return {
+      latestScheduled: null,
+      latestManual: null,
+      nextExpectedNyNine: null,
+    };
   }
 }

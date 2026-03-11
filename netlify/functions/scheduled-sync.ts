@@ -3,18 +3,35 @@ import type { Handler } from "@netlify/functions";
 import { getDemoUserId } from "../../services/dashboardData";
 import { runFullSync } from "../../services/runFullSync";
 
-/**
- * Phase 1 scaffold.
- * The actual cron schedule and duplicate-run protection are finalized in Phase 6.
- */
 export const config = {
-  // 14:00 UTC ~= 9:00 AM America/New_York during EST.
-  // This is a placeholder and will be hardened in Phase 6.
-  schedule: "0 14 * * *",
+  /**
+   * Netlify schedules in UTC and doesn't support IANA time zones directly.
+   * Trigger at both 13:00 and 14:00 UTC; runtime gating ensures execution at
+   * exactly 09:00 America/New_York across DST changes.
+   */
+  schedule: "0 13,14 * * *",
 };
 
 export const handler: Handler = async () => {
   try {
+    const nyHour = Number(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "2-digit",
+        hour12: false,
+      }).format(new Date()),
+    );
+    if (nyHour !== 9) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          skipped: true,
+          reason: "Not 09:00 America/New_York yet.",
+          nyHour,
+        }),
+      };
+    }
+
     const userId = await getDemoUserId();
     if (!userId) {
       return {

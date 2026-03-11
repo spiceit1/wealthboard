@@ -2,7 +2,7 @@
 
 Production-focused personal finance dashboard scaffold.
 
-This repository is currently at **Phase 3**:
+This repository is currently at **Phase 6**:
 
 - Next.js 15 + TypeScript + Tailwind CSS + shadcn/ui configured
 - TanStack Query configured
@@ -15,6 +15,13 @@ This repository is currently at **Phase 3**:
 - Central sync engine persists `sync_runs`, `sync_run_events`, and `daily_snapshots`
 - Manual refresh now creates a sync job and polls live progress
 - `/sync-logs` page now shows recent persisted sync runs
+- `/accounts` and `/holdings` pages provide detailed drill-down tables
+- Dashboard includes category trends chart
+- Provider adapter registry routes plaid/snaptrade/coingecko through mock or real mode
+- `/connections` shows provider mode, readiness, and security constraints
+- Scheduled sync hardened for 9:00 AM America/New_York with DST-safe UTC cron windows
+- Duplicate scheduled runs are prevented per New York calendar day
+- `/settings` now shows scheduler health and latest run status
 
 ## Tech Stack
 
@@ -86,10 +93,10 @@ If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeho
 ## Netlify (Scaffolded)
 
 - `netlify.toml` is configured for Next.js + Functions.
-- Function stubs:
-  - `netlify/functions/manual-sync.ts`
-  - `netlify/functions/scheduled-sync.ts`
-- Schedule hardening and duplicate-run protection are implemented in later phases.
+- Functions:
+  - `netlify/functions/manual-sync.ts` (token-protected via `x-internal-sync-token`)
+  - `netlify/functions/scheduled-sync.ts` (auto-refresh window + NY-time gating)
+- Scheduled function cron runs at `0 13,14 * * *` and executes only at 09:00 New York.
 
 ## GitHub Push Instructions
 
@@ -112,4 +119,4 @@ git push -u origin main
 
 ## Next Phase
 
-Phase 4 will add expanded charts and deeper drill-down pages for accounts/holdings trends.
+Real API connection flows (Plaid Link + SnapTrade auth) and production provider token lifecycle hardening.

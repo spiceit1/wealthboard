@@ -1,10 +1,21 @@
 import type { Handler } from "@netlify/functions";
 
+import { env } from "../../lib/env";
 import { getDemoUserId } from "../../services/dashboardData";
 import { runFullSync } from "../../services/runFullSync";
 
-export const handler: Handler = async () => {
+export const handler: Handler = async (event) => {
   try {
+    if (env.INTERNAL_SYNC_TOKEN) {
+      const provided = event.headers["x-internal-sync-token"] ?? event.headers["X-Internal-Sync-Token"];
+      if (provided !== env.INTERNAL_SYNC_TOKEN) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: "Unauthorized" }),
+        };
+      }
+    }
+
     const userId = await getDemoUserId();
     if (!userId) {
       return {
