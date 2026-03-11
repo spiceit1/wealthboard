@@ -3,7 +3,10 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Cell,
+  Legend,
   Line,
   LineChart,
   Pie,
@@ -305,6 +308,50 @@ export function DashboardOverview() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Category Trends</CardTitle>
+          <CardDescription>Cash, stocks, and crypto over time</CardDescription>
+        </CardHeader>
+        <CardContent className="h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={filteredHistory}>
+              <XAxis dataKey="date" hide />
+              <YAxis hide domain={["auto", "auto"]} />
+              <Tooltip
+                formatter={(value) => tooltipCurrency(value)}
+                labelFormatter={(label) => `Date: ${label}`}
+              />
+              <Legend />
+              <Area
+                type="monotone"
+                dataKey="cash"
+                name="Cash"
+                stroke="#3b82f6"
+                fill="#3b82f6"
+                fillOpacity={0.2}
+              />
+              <Area
+                type="monotone"
+                dataKey="stocks"
+                name="Stocks"
+                stroke="#10b981"
+                fill="#10b981"
+                fillOpacity={0.16}
+              />
+              <Area
+                type="monotone"
+                dataKey="crypto"
+                name="Crypto"
+                stroke="#a855f7"
+                fill="#a855f7"
+                fillOpacity={0.12}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

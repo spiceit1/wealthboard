@@ -1,7 +1,15 @@
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { dailySnapshots, snapshotItems, syncRunEvents, syncRuns, users } from "@/db/schema";
+import {
+  accounts,
+  dailySnapshots,
+  holdings,
+  snapshotItems,
+  syncRunEvents,
+  syncRuns,
+  users,
+} from "@/db/schema";
 
 function toNumber(value: string) {
   return Number(value);
@@ -197,6 +205,59 @@ export async function getSyncRuns(userId: string) {
     return runs.map((run) => ({
       ...run,
       lastEvent: lastEventByRun.get(run.id)?.message ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getAccountsOverview(userId: string) {
+  try {
+    const rows = await db
+      .select({
+        id: accounts.id,
+        institutionName: accounts.institutionName,
+        name: accounts.name,
+        type: accounts.type,
+        currency: accounts.currency,
+        balance: accounts.lastBalance,
+        balanceAsOf: accounts.balanceAsOf,
+      })
+      .from(accounts)
+      .where(eq(accounts.userId, userId))
+      .orderBy(asc(accounts.type), asc(accounts.name));
+
+    return rows.map((row) => ({
+      ...row,
+      balance: Number(row.balance),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getHoldingsOverview(userId: string) {
+  try {
+    const rows = await db
+      .select({
+        id: holdings.id,
+        symbol: holdings.symbol,
+        name: holdings.name,
+        assetClass: holdings.assetClass,
+        quantity: holdings.quantity,
+        lastPrice: holdings.lastPrice,
+        marketValue: holdings.marketValue,
+        isManual: holdings.isManual,
+      })
+      .from(holdings)
+      .where(eq(holdings.userId, userId))
+      .orderBy(asc(holdings.assetClass), asc(holdings.symbol));
+
+    return rows.map((row) => ({
+      ...row,
+      quantity: Number(row.quantity),
+      lastPrice: Number(row.lastPrice),
+      marketValue: Number(row.marketValue),
     }));
   } catch {
     return [];
