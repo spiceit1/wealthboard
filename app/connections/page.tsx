@@ -1,7 +1,9 @@
 import { AppNav } from "@/components/shared/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlaidConnectButton } from "@/components/connections/plaid-connect-button";
 import { env } from "@/lib/env";
+import { getProviderAdapterModes } from "@/providers/adapters";
 import { getConnectionsOverview, getDemoUserId } from "@/services/dashboardData";
 
 const providerSecurityNotes: Record<string, string> = {
@@ -12,6 +14,8 @@ const providerSecurityNotes: Record<string, string> = {
 
 function isProviderConfigured(provider: "plaid" | "snaptrade" | "coingecko") {
   if (env.MOCK_MODE) return true;
+  const modes = getProviderAdapterModes();
+  if (modes[provider] === "mock") return true;
   if (provider === "plaid") {
     return Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
   }
@@ -26,6 +30,7 @@ export const dynamic = "force-dynamic";
 export default async function ConnectionsPage() {
   const userId = await getDemoUserId();
   const rows = userId ? await getConnectionsOverview(userId) : [];
+  const adapterModes = getProviderAdapterModes();
 
   return (
     <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
@@ -41,13 +46,18 @@ export default async function ConnectionsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         {rows.map((row) => {
           const configured = isProviderConfigured(row.provider);
+          const mode = adapterModes[row.provider];
           return (
             <Card key={row.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="capitalize">{row.provider}</CardTitle>
                   <Badge variant={configured ? "secondary" : "destructive"}>
-                    {configured ? "Configured" : "Missing Keys"}
+                    {mode === "mock"
+                      ? "Mock Fallback"
+                      : configured
+                        ? "Configured"
+                        : "Missing Keys"}
                   </Badge>
                 </div>
                 <CardDescription>{row.displayName}</CardDescription>
@@ -64,8 +74,10 @@ export default async function ConnectionsPage() {
                   </span>
                 </p>
                 <p>
-                  Adapter mode: <span className="font-medium">{env.MOCK_MODE ? "Mock" : "Real"}</span>
+                  Adapter mode:{" "}
+                  <span className="font-medium capitalize">{mode}</span>
                 </p>
+                {row.provider === "plaid" && <PlaidConnectButton />}
               </CardContent>
             </Card>
           );

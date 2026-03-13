@@ -338,7 +338,7 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
   try {
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
-      const plaid = await adapters.plaid.fetchBalances();
+      const plaid = await adapters.plaid.fetchBalances(userId);
       await upsertCashAccounts(userId, plaid.data);
       for (const account of plaid.data) {
         await pushEvent(`Saved ${account.name} balance`, "plaid");

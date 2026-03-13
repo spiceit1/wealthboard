@@ -14,6 +14,9 @@ const envSchema = z
     DATABASE_URL: z.string().optional(),
     APP_URL: z.string().url().default("http://localhost:3000"),
     INTERNAL_SYNC_TOKEN: z.string().min(1).optional(),
+    PLAID_CLIENT_ID: z.string().optional(),
+    PLAID_SECRET: z.string().optional(),
+    PLAID_ENV: z.enum(["sandbox", "development", "production"]).default("sandbox"),
   })
   .superRefine(({ MOCK_MODE, DATABASE_URL }, context) => {
     if (!MOCK_MODE && !DATABASE_URL) {
@@ -31,4 +34,7 @@ export const env = envSchema.parse({
   DATABASE_URL: process.env.DATABASE_URL,
   APP_URL: process.env.APP_URL,
   INTERNAL_SYNC_TOKEN: process.env.INTERNAL_SYNC_TOKEN,
+  PLAID_CLIENT_ID: process.env.PLAID_CLIENT_ID,
+  PLAID_SECRET: process.env.PLAID_SECRET,
+  PLAID_ENV: process.env.PLAID_ENV,
 });

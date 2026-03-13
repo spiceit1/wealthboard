@@ -22,6 +22,9 @@ This repository is currently at **Phase 6**:
 - Scheduled sync hardened for 9:00 AM America/New_York with DST-safe UTC cron windows
 - Duplicate scheduled runs are prevented per New York calendar day
 - `/settings` now shows scheduler health and latest run status
+- Plaid backend endpoints added:
+  - `POST /api/plaid/link-token`
+  - `POST /api/plaid/exchange-public-token`
 
 ## Tech Stack
 
@@ -89,6 +92,13 @@ If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeho
   - `providers/snaptrade.ts` and `providers/snaptrade.mock.ts`
   - `providers/coingecko.ts` and `providers/coingecko.mock.ts`
 - The dashboard sync API uses mock providers while in mock mode.
+
+## Plaid Sandbox Flow
+
+1. Set `MOCK_MODE=false`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`.
+2. Call `POST /api/plaid/link-token` from your frontend to initialize Plaid Link.
+3. Exchange the `public_token` via `POST /api/plaid/exchange-public-token`.
+4. After exchange, Plaid balances can be used by sync runs.
 
 ## Netlify (Scaffolded)
 

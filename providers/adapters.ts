@@ -14,7 +14,7 @@ export type CryptoPrice = {
 
 export type ProviderAdapters = {
   plaid: {
-    fetchBalances: () => Promise<ProviderResult<AccountBalance[]>>;
+    fetchBalances: (userId?: string) => Promise<ProviderResult<AccountBalance[]>>;
   };
   snaptrade: {
     fetchPositions: () => Promise<ProviderResult<Position[]>>;
@@ -30,35 +30,45 @@ function requireEnv(name: string, value: string | undefined) {
   }
 }
 
-export function getProviderAdapters(): ProviderAdapters {
+type AdapterMode = "mock" | "real";
+
+export function getProviderAdapterModes(): Record<"plaid" | "snaptrade" | "coingecko", AdapterMode> {
   if (env.MOCK_MODE) {
     return {
-      plaid: {
-        fetchBalances: fetchPlaidBalancesMock,
-      },
-      snaptrade: {
-        fetchPositions: fetchSnapTradePositionsMock,
-      },
-      coingecko: {
-        fetchPrices: fetchCryptoPricesMock,
-      },
+      plaid: "mock",
+      snaptrade: "mock",
+      coingecko: "mock",
     };
   }
 
-  requireEnv("PLAID_CLIENT_ID", process.env.PLAID_CLIENT_ID);
-  requireEnv("PLAID_SECRET", process.env.PLAID_SECRET);
-  requireEnv("SNAPTRADE_CLIENT_ID", process.env.SNAPTRADE_CLIENT_ID);
-  requireEnv("SNAPTRADE_CONSUMER_KEY", process.env.SNAPTRADE_CONSUMER_KEY);
+  const plaidConfigured = Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+  return {
+    plaid: plaidConfigured ? "real" : "mock",
+    // Real adapters for these providers are not implemented yet.
+    snaptrade: "mock",
+    coingecko: "mock",
+  };
+}
+
+export function getProviderAdapters(): ProviderAdapters {
+  const modes = getProviderAdapterModes();
+  if (modes.plaid === "real") {
+    requireEnv("PLAID_CLIENT_ID", process.env.PLAID_CLIENT_ID);
+    requireEnv("PLAID_SECRET", process.env.PLAID_SECRET);
+  }
 
   return {
     plaid: {
-      fetchBalances: fetchPlaidBalances,
+      fetchBalances:
+        modes.plaid === "real"
+          ? (userId?: string) => fetchPlaidBalances(userId)
+          : () => fetchPlaidBalancesMock(),
     },
     snaptrade: {
-      fetchPositions: fetchSnapTradePositions,
+      fetchPositions: modes.snaptrade === "real" ? fetchSnapTradePositions : fetchSnapTradePositionsMock,
     },
     coingecko: {
-      fetchPrices: fetchCryptoPrices,
+      fetchPrices: modes.coingecko === "real" ? fetchCryptoPrices : fetchCryptoPricesMock,
     },
   };
 }
