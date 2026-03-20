@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/shared/app-nav";
+import { ManualHoldingEditor } from "@/components/holdings/manual-holding-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatUSD } from "@/lib/formatters";
 import { getDemoUserId, getHoldingsOverview } from "@/services/dashboardData";
@@ -22,9 +23,11 @@ export default async function HoldingsPage() {
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Holdings</h1>
         <p className="text-sm text-muted-foreground">
-          Brokerage positions and crypto holdings with quantity, price, and market value.
+          Manual stock and crypto quantities with sync-driven price refresh.
         </p>
       </section>
+
+      <ManualHoldingEditor rows={rows} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>

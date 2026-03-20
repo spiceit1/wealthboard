@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { env } from "@/lib/env";
 import { getProviderAdapterModes, getProviderAdapters } from "@/providers/adapters";
-import type { AccountBalance, Position } from "@/providers/types";
+import type { AccountBalance } from "@/providers/types";
 
 export type SyncEvent = {
   timestamp: string;
@@ -183,64 +183,69 @@ async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
   }
 }
 
-async function upsertBrokerageHoldings(userId: string, positions: Position[]) {
-  const brokerageAccount = await db.query.accounts.findFirst({
-    where: and(eq(accounts.userId, userId), eq(accounts.type, "brokerage")),
-  });
-
-  if (!brokerageAccount) {
-    return;
-  }
-
+async function removeAutoStockHoldings(userId: string) {
   await db
     .delete(holdings)
-    .where(and(eq(holdings.userId, userId), eq(holdings.accountId, brokerageAccount.id)));
-
-  if (!positions.length) {
-    return;
-  }
-
-  await db.insert(holdings).values(
-    positions.map((position) => ({
-      userId,
-      accountId: brokerageAccount.id,
-      symbol: position.symbol,
-      name: position.symbol,
-      assetClass: position.assetClass,
-      quantity: position.quantity.toFixed(8),
-      lastPrice: position.price.toFixed(6),
-      marketValue: toMoney(position.value),
-      isManual: false,
-    })),
-  );
-
-  const brokerageValue = positions.reduce((sum, position) => sum + position.value, 0);
-  await db
-    .update(accounts)
-    .set({
-      lastBalance: toMoney(brokerageValue),
-      balanceAsOf: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(accounts.id, brokerageAccount.id));
+    .where(and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.isManual, false)));
 }
 
-async function refreshCryptoValuations(userId: string) {
-  const cryptoHoldings = await db.query.holdings.findMany({
-    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+async function fetchStockPriceStooq(symbol: string): Promise<number | null> {
+  const normalized = symbol.trim().toLowerCase();
+  if (!normalized) return null;
+  const candidates = [`${normalized}.us`, normalized];
+  for (const ticker of candidates) {
+    const response = await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(ticker)}&i=d`, {
+      cache: "no-store",
+    });
+    if (!response.ok) continue;
+    const csv = (await response.text()).trim();
+    const [, row] = csv.split(/\r?\n/);
+    if (!row) continue;
+    const columns = row.split(",");
+    const close = Number(columns[4]);
+    if (Number.isFinite(close) && close > 0) return close;
+  }
+  return null;
+}
+
+async function fetchStockPrices(symbols: string[]) {
+  const map = new Map<string, number>();
+  for (const symbol of symbols) {
+    try {
+      const price = await fetchStockPriceStooq(symbol);
+      if (price != null) map.set(symbol.toUpperCase(), price);
+    } catch {
+      // best-effort pricing only
+    }
+  }
+  return map;
+}
+
+async function refreshManualHoldingValuations(userId: string) {
+  const manualRows = await db.query.holdings.findMany({
+    where: and(eq(holdings.userId, userId), eq(holdings.isManual, true)),
   });
 
-  if (!cryptoHoldings.length) {
-    return { symbols: [] as string[] };
+  if (!manualRows.length) {
+    return { stockSymbols: [] as string[], cryptoSymbols: [] as string[] };
   }
 
-  const symbols = [...new Set(cryptoHoldings.map((holding) => holding.symbol.toUpperCase()))];
-  const adapters = getProviderAdapters();
-  const priceResult = await adapters.coingecko.fetchPrices(symbols);
-  const priceMap = new Map(priceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
+  const stockSymbols = [...new Set(
+    manualRows.filter((h) => h.assetClass === "stock").map((h) => h.symbol.toUpperCase()),
+  )];
+  const cryptoSymbols = [...new Set(
+    manualRows.filter((h) => h.assetClass === "crypto").map((h) => h.symbol.toUpperCase()),
+  )];
 
-  for (const holding of cryptoHoldings) {
-    const matchedPrice = priceMap.get(holding.symbol.toUpperCase());
+  const stockPriceMap = await fetchStockPrices(stockSymbols);
+  const adapters = getProviderAdapters();
+  const cryptoPriceResult = await adapters.coingecko.fetchPrices(cryptoSymbols);
+  const cryptoPriceMap = new Map(cryptoPriceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
+
+  for (const holding of manualRows) {
+    const symbol = holding.symbol.toUpperCase();
+    const matchedPrice =
+      holding.assetClass === "stock" ? stockPriceMap.get(symbol) : cryptoPriceMap.get(symbol);
     if (!matchedPrice) continue;
 
     const quantity = Number(holding.quantity);
@@ -256,22 +261,22 @@ async function refreshCryptoValuations(userId: string) {
       .where(eq(holdings.id, holding.id));
 
     await db.insert(prices).values({
-      symbol: holding.symbol.toUpperCase(),
-      assetClass: "crypto",
+      symbol,
+      assetClass: holding.assetClass,
       currency: "USD",
       price: matchedPrice.toFixed(6),
       pricedAt: new Date(),
-      source: "coingecko",
+      source: holding.assetClass === "stock" ? "snaptrade" : "coingecko",
     });
   }
 
-  const cryptoAccounts = await db.query.accounts.findMany({
-    where: and(eq(accounts.userId, userId), eq(accounts.type, "crypto_wallet")),
+  const rowsByAccount = await db.query.accounts.findMany({
+    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["brokerage", "crypto_wallet"])),
   });
 
-  for (const account of cryptoAccounts) {
+  for (const account of rowsByAccount) {
     const accountHoldings = await db.query.holdings.findMany({
-      where: and(eq(holdings.userId, userId), eq(holdings.accountId, account.id)),
+      where: and(eq(holdings.userId, userId), eq(holdings.accountId, account.id), eq(holdings.isManual, true)),
     });
     const accountTotal = accountHoldings.reduce((sum, item) => sum + Number(item.marketValue), 0);
     await db
@@ -284,7 +289,7 @@ async function refreshCryptoValuations(userId: string) {
       .where(eq(accounts.id, account.id));
   }
 
-  return { symbols };
+  return { stockSymbols, cryptoSymbols };
 }
 
 async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncSummary | null> {
@@ -440,25 +445,18 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
       );
     }
 
+    await pushEvent("Using manual holdings for stocks and crypto", "snaptrade");
     try {
-      await pushEvent("Fetching Robinhood portfolio", "snaptrade");
-      const broker = await adapters.snaptrade.fetchPositions();
-      await upsertBrokerageHoldings(userId, broker.data);
-      await pushEvent(`Retrieved ${broker.data.length} positions`, "snaptrade");
-    } catch (error) {
+      await removeAutoStockHoldings(userId);
+      await pushEvent("Fetching latest market prices for manual holdings", "coingecko");
+      const result = await refreshManualHoldingValuations(userId);
       await pushEvent(
-        `Robinhood sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "snaptrade",
+        `Updated prices for ${result.stockSymbols.length} stock symbols and ${result.cryptoSymbols.length} crypto symbols`,
+        "coingecko",
       );
-    }
-
-    try {
-      await pushEvent("Fetching crypto prices", "coingecko");
-      const result = await refreshCryptoValuations(userId);
-      await pushEvent(`Updated ${result.symbols.length} crypto prices`, "coingecko");
     } catch (error) {
       await pushEvent(
-        `Crypto sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Manual holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
         "coingecko",
       );
     }

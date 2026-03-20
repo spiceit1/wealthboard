@@ -8,14 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function AccountsPage() {
   const userId = await getDemoUserId();
   const rows = userId ? await getAccountsOverview(userId) : [];
-  const cashTotal = rows
+  const bankRows = rows.filter((row) => row.type === "checking" || row.type === "savings");
+  const cashTotal = bankRows
     .filter((row) => row.type === "checking" || row.type === "savings")
-    .reduce((sum, row) => sum + row.balance, 0);
-  const brokerageTotal = rows
-    .filter((row) => row.type === "brokerage")
-    .reduce((sum, row) => sum + row.balance, 0);
-  const cryptoWalletTotal = rows
-    .filter((row) => row.type === "crypto_wallet")
     .reduce((sum, row) => sum + row.balance, 0);
 
   return (
@@ -25,34 +20,22 @@ export default async function AccountsPage() {
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
         <p className="text-sm text-muted-foreground">
-          Drill-down of connected cash, brokerage, and crypto wallet accounts.
+          Connected bank cash accounts (checking and savings).
         </p>
       </section>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-1">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Cash Accounts</CardTitle>
+            <CardTitle className="text-base">Bank Cash Total</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{formatUSD(cashTotal)}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Brokerage Accounts</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">{formatUSD(brokerageTotal)}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Crypto Wallets</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">{formatUSD(cryptoWalletTotal)}</CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Account Balances</CardTitle>
+          <CardTitle>Bank Account Balances</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -67,7 +50,7 @@ export default async function AccountsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {bankRows.map((row) => (
                   <tr key={row.id} className="border-b">
                     <td className="py-2 pr-4">{row.institutionName}</td>
                     <td className="py-2 pr-4">{row.name}</td>
@@ -78,10 +61,10 @@ export default async function AccountsPage() {
                     </td>
                   </tr>
                 ))}
-                {!rows.length && (
+                {!bankRows.length && (
                   <tr>
                     <td className="py-3 text-muted-foreground" colSpan={5}>
-                      No accounts found.
+                      No bank accounts found.
                     </td>
                   </tr>
                 )}

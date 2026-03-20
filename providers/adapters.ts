@@ -46,7 +46,7 @@ export function getProviderAdapterModes(): Record<"plaid" | "snaptrade" | "coing
     plaid: plaidConfigured ? "real" : "mock",
     // Real adapters for these providers are not implemented yet.
     snaptrade: "mock",
-    coingecko: "mock",
+    coingecko: "real",
   };
 }
 

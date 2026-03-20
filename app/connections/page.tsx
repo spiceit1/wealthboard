@@ -11,8 +11,14 @@ import { getConnectionsOverview, getDemoUserId } from "@/services/dashboardData"
 
 const providerSecurityNotes: Record<string, string> = {
   plaid: "Uses Plaid Link with read-only access. Credentials are never stored.",
-  snaptrade: "Uses SnapTrade read-only brokerage access (no order placement).",
-  coingecko: "Supports manual crypto holdings now; exchange APIs can be added later.",
+  snaptrade: "Stock prices are refreshed from Stooq during manual and scheduled sync. Quantities are entered manually in Holdings.",
+  coingecko: "Crypto prices are refreshed from CoinGecko during manual and scheduled sync. Quantities are entered manually in Holdings.",
+};
+
+const providerSyncMethod: Record<string, string> = {
+  plaid: "Pulls live bank balances from Plaid-linked accounts.",
+  snaptrade: "Price source for manual stocks: Stooq (no position import).",
+  coingecko: "Price source for manual crypto: CoinGecko API.",
 };
 
 function isProviderConfigured(provider: "plaid" | "snaptrade" | "coingecko") {
@@ -110,18 +116,32 @@ export default async function ConnectionsPage() {
           const activeCount = providerRows.filter((item) => item.status === "active").length;
           const configured = isProviderConfigured(row.provider);
           const mode = adapterModes[row.provider];
+          const badge: { variant: "secondary" | "destructive"; label: string } = (() => {
+            if (row.provider === "snaptrade") {
+              return { variant: "secondary", label: "Auto Prices (Manual Holdings)" };
+            }
+            if (row.provider === "coingecko") {
+              return {
+                variant: "secondary",
+                label: mode === "real" ? "Live Prices" : "Mock Prices",
+              };
+            }
+            return {
+              variant: configured ? "secondary" : "destructive",
+              label:
+                mode === "mock"
+                  ? "Mock Fallback"
+                  : configured
+                    ? "Configured"
+                    : "Missing Keys",
+            };
+          })();
           return (
             <Card key={row.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="capitalize">{row.provider}</CardTitle>
-                  <Badge variant={configured ? "secondary" : "destructive"}>
-                    {mode === "mock"
-                      ? "Mock Fallback"
-                      : configured
-                        ? "Configured"
-                        : "Missing Keys"}
-                  </Badge>
+                  <Badge variant={badge.variant}>{badge.label}</Badge>
                 </div>
                 <CardDescription>
                   {row.provider === "plaid" && providerRows.length > 0
@@ -131,6 +151,7 @@ export default async function ConnectionsPage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p className="text-muted-foreground">{providerSecurityNotes[row.provider]}</p>
+                <p className="text-muted-foreground">{providerSyncMethod[row.provider]}</p>
                 <p>
                   Status:{" "}
                   <span className="font-medium capitalize">
@@ -146,8 +167,10 @@ export default async function ConnectionsPage() {
                   </span>
                 </p>
                 <p>
-                  Adapter mode:{" "}
-                  <span className="font-medium capitalize">{mode}</span>
+                  Price sync mode:{" "}
+                  <span className="font-medium capitalize">
+                    {row.provider === "plaid" ? mode : "manual holdings + live prices"}
+                  </span>
                 </p>
                 {row.provider === "plaid" && providerRows.length > 0 && (
                   <div className="space-y-1 rounded-md border p-2">
