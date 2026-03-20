@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+
 import { AppNav } from "@/components/shared/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +30,16 @@ function isProviderConfigured(provider: "plaid" | "snaptrade" | "coingecko") {
 export const dynamic = "force-dynamic";
 
 export default async function ConnectionsPage() {
+  const headerList = await headers();
+  const forwardedHost = headerList.get("x-forwarded-host");
+  const host = forwardedHost ?? headerList.get("host");
+  const proto = headerList.get("x-forwarded-proto") ?? "https";
+  const requestOrigin =
+    host && !host.includes("localhost") ? `${proto}://${host}` : null;
+  const oauthRedirectExample = requestOrigin
+    ? `${requestOrigin}/connections`
+    : `${env.APP_URL.replace(/\/$/, "")}/connections`;
+
   const userId = await getDemoUserId();
   const rows = userId ? await getConnectionsOverview(userId) : [];
   const adapterModes = getProviderAdapterModes();
@@ -53,6 +65,23 @@ export default async function ConnectionsPage() {
           <span className="font-medium capitalize">{adapterModes.plaid}</span>, keys{" "}
           <span className="font-medium">{plaidKeysPresent ? "present" : "missing"}</span>.
         </p>
+        {env.MOCK_MODE && (
+          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+            <p className="font-medium">MOCK_MODE is on for this deployment.</p>
+            <p className="mt-1 text-muted-foreground dark:text-amber-200/90">
+              When <code className="rounded bg-black/5 px-1 py-0.5 dark:bg-white/10">MOCK_MODE=true</code>, Plaid
+              always uses the mock adapter—even if production keys are set. Set{" "}
+              <code className="rounded bg-black/5 px-1 py-0.5 dark:bg-white/10">MOCK_MODE=false</code> in Netlify
+              environment variables and redeploy to use real Plaid Link and balances.
+            </p>
+          </div>
+        )}
+        {!env.MOCK_MODE && plaidKeysPresent && (
+          <p className="text-xs text-muted-foreground">
+            Production Plaid OAuth: add this redirect URI in the Plaid dashboard (Allowed redirect URIs):{" "}
+            <code className="rounded bg-muted px-1 py-0.5">{oauthRedirectExample}</code>
+          </p>
+        )}
       </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
