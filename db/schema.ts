@@ -93,6 +93,26 @@ export const providerTokens = pgTable(
   }),
 );
 
+/** One row per Plaid Item so users can link TD, Bask, etc. without replacing tokens. */
+export const plaidItems = pgTable(
+  "plaid_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: varchar("item_id", { length: 191 }).notNull(),
+    accessTokenEncrypted: text("access_token_encrypted").notNull(),
+    institutionId: varchar("institution_id", { length: 191 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userItemUnique: uniqueIndex("plaid_items_user_item_uidx").on(table.userId, table.itemId),
+    userIdx: index("plaid_items_user_idx").on(table.userId),
+  }),
+);
+
 export const accounts = pgTable(
   "accounts",
   {
@@ -250,8 +270,16 @@ export const snapshotItems = pgTable(
   }),
 );
 
+export const plaidItemsRelations = relations(plaidItems, ({ one }) => ({
+  user: one(users, {
+    fields: [plaidItems.userId],
+    references: [users.id],
+  }),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   connections: many(connections),
+  plaidItems: many(plaidItems),
   accounts: many(accounts),
   holdings: many(holdings),
   snapshots: many(dailySnapshots),

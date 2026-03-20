@@ -80,9 +80,13 @@ App runs at [http://localhost:3000](http://localhost:3000).
 npm run db:generate
 npm run db:migrate
 npm run db:seed
-npm run db:cleanup-duplicates   # optional: stale Plaid Items + duplicate checking/savings rows
+npm run db:cleanup-duplicates   # optional: duplicate checking/savings rows (same name/institution)
 npm run db:remove-legacy-accounts  # optional: removes fixed legacy rows (edit list in script)
 ```
+
+After pulling updates that add **`plaid_items`**, apply the schema (`npm run db:push` or `npm run db:migrate`) so multiple Plaid banks (e.g. TD + Bask) can each keep their own Item/token.
+
+**Plaid:** WealthBoard stores **one encrypted access token per Plaid Item**. Linking an additional bank adds a row; it no longer replaces your previous bank. If TD disappeared after linking Bask with an older build, **link TD again** in Plaid Link once — the new code prevents the next bank from wiping the prior one.
 
 If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeholder.
 

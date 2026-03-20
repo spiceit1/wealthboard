@@ -138,13 +138,21 @@ async function dedupeCashAccountsByDisplayKey(userId: string, winningProviderIds
   }
 }
 
-async function upsertCashAccounts(
-  userId: string,
-  data: AccountBalance[],
-  options: { connectionId: string | null },
-) {
-  const { connectionId } = options;
+async function resolvePlaidConnectionId(userId: string, plaidItemId: string | undefined) {
+  if (!plaidItemId) return null;
+  const conn = await db.query.connections.findFirst({
+    where: and(
+      eq(connections.userId, userId),
+      eq(connections.provider, "plaid"),
+      eq(connections.externalId, plaidItemId),
+    ),
+  });
+  return conn?.id ?? null;
+}
+
+async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
   for (const account of data) {
+    const connectionId = await resolvePlaidConnectionId(userId, account.plaidItemId);
     const institutionName = resolveCashInstitutionLabel(account);
     await db
       .insert(accounts)
@@ -406,23 +414,20 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
       await pushEvent("Fetching Plaid bank balances", "plaid");
       const plaid = await adapters.plaid.fetchBalances(userId);
       await removeLegacyMockInstitutionAccounts(userId);
-      const itemId = plaid.meta?.plaidItemId;
-      const plaidConnection = itemId
-        ? await db.query.connections.findFirst({
-            where: and(
-              eq(connections.userId, userId),
-              eq(connections.provider, "plaid"),
-              eq(connections.externalId, itemId),
-            ),
-          })
-        : await db.query.connections.findFirst({
-            where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
-          });
-      const plaidConnectionId = plaidConnection?.id ?? null;
       const activePlaidIds = new Set(plaid.data.map((a) => a.providerAccountId));
-      await upsertCashAccounts(userId, plaid.data, { connectionId: plaidConnectionId });
-      if (adapterModes.plaid === "real" && plaidConnectionId) {
-        await prunePlaidAccountsNotInFetch(userId, plaidConnectionId, activePlaidIds);
+      await upsertCashAccounts(userId, plaid.data);
+      if (adapterModes.plaid === "real") {
+        const plaidConnections = await db.query.connections.findMany({
+          where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
+        });
+        for (const conn of plaidConnections) {
+          const activeForItem = new Set(
+            plaid.data
+              .filter((a) => a.plaidItemId === conn.externalId)
+              .map((a) => a.providerAccountId),
+          );
+          await prunePlaidAccountsNotInFetch(userId, conn.id, activeForItem);
+        }
         await dedupeCashAccountsByDisplayKey(userId, activePlaidIds);
       }
       for (const account of plaid.data) {

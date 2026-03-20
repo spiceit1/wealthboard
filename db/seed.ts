@@ -43,6 +43,7 @@ async function seed() {
       prices,
       holdings,
       accounts,
+      plaid_items,
       provider_tokens,
       connections,
       users
@@ -82,12 +83,6 @@ async function seed() {
     .returning();
 
   await db.insert(providerTokens).values([
-    {
-      userId: user.id,
-      provider: "plaid",
-      accessTokenEncrypted: "mock-encrypted-plaid-token",
-      scopes: ["accounts:read", "transactions:read"],
-    },
     {
       userId: user.id,
       provider: "snaptrade",

@@ -1,19 +1,74 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { accounts, connections, providerTokens } from "@/db/schema";
+import { connections, plaidItems, providerTokens } from "@/db/schema";
+import { getPlaidClient } from "@/lib/plaid";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 
-export async function getPlaidAccessToken(userId: string) {
-  const token = await db.query.providerTokens.findFirst({
-    where: and(eq(providerTokens.userId, userId), eq(providerTokens.provider, "plaid")),
-  });
+export type PlaidItemToken = {
+  itemId: string;
+  accessToken: string;
+};
 
-  if (!token?.accessTokenEncrypted) {
-    return null;
+/**
+ * All Plaid Items linked for this user (TD, Bask, etc.). Each Item has its own access token.
+ */
+export async function getPlaidAccessTokensForUser(userId: string): Promise<PlaidItemToken[]> {
+  const rows = await db.query.plaidItems.findMany({
+    where: eq(plaidItems.userId, userId),
+  });
+  if (rows.length > 0) {
+    return rows.map((r) => ({
+      itemId: r.itemId,
+      accessToken: decryptSecret(r.accessTokenEncrypted),
+    }));
   }
 
-  return decryptSecret(token.accessTokenEncrypted);
+  // Legacy: single `provider_tokens` row (pre–multi-Item). Migrate on read via Plaid item/get.
+  const legacy = await db.query.providerTokens.findFirst({
+    where: and(eq(providerTokens.userId, userId), eq(providerTokens.provider, "plaid")),
+  });
+  if (!legacy?.accessTokenEncrypted) {
+    return [];
+  }
+
+  const accessToken = decryptSecret(legacy.accessTokenEncrypted);
+  try {
+    const client = getPlaidClient();
+    const itemResp = await client.itemGet({ access_token: accessToken });
+    const itemId = itemResp.data.item.item_id;
+    const institutionId = itemResp.data.item.institution_id ?? null;
+
+    await db
+      .insert(plaidItems)
+      .values({
+        userId,
+        itemId,
+        accessTokenEncrypted: legacy.accessTokenEncrypted,
+        institutionId,
+      })
+      .onConflictDoUpdate({
+        target: [plaidItems.userId, plaidItems.itemId],
+        set: {
+          accessTokenEncrypted: encryptSecret(accessToken),
+          institutionId,
+          updatedAt: new Date(),
+        },
+      });
+
+    await db
+      .delete(providerTokens)
+      .where(and(eq(providerTokens.userId, userId), eq(providerTokens.provider, "plaid")));
+
+    return [{ itemId, accessToken }];
+  } catch {
+    // Plaid call failed (e.g. invalid token); return legacy single token without item id for best-effort fetch
+    const conn = await db.query.connections.findFirst({
+      where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
+    });
+    const fallbackItemId = conn?.externalId ?? "legacy";
+    return [{ itemId: fallbackItemId, accessToken }];
+  }
 }
 
 export async function savePlaidAccessToken(params: {
@@ -22,7 +77,6 @@ export async function savePlaidAccessToken(params: {
   accessToken: string;
   institutionName?: string | null;
   institutionId?: string | null;
-  scopes?: string[];
 }) {
   const {
     userId,
@@ -30,7 +84,6 @@ export async function savePlaidAccessToken(params: {
     accessToken,
     institutionName,
     institutionId,
-    scopes = ["accounts:read", "balances:read", "transactions:read"],
   } = params;
 
   const [connection] = await db
@@ -54,38 +107,27 @@ export async function savePlaidAccessToken(params: {
     })
     .returning();
 
-  // Only one Plaid access token is stored per user; remove other Items' connections
-  // and their accounts so we don't show duplicate bank rows from old Links.
-  const stalePlaidConnections = await db.query.connections.findMany({
-    where: and(
-      eq(connections.userId, userId),
-      eq(connections.provider, "plaid"),
-      ne(connections.externalId, itemId),
-    ),
-  });
-  for (const stale of stalePlaidConnections) {
-    await db.delete(accounts).where(eq(accounts.connectionId, stale.id));
-    await db.delete(connections).where(eq(connections.id, stale.id));
-  }
-
   await db
-    .insert(providerTokens)
+    .insert(plaidItems)
     .values({
       userId,
-      provider: "plaid",
+      itemId,
       accessTokenEncrypted: encryptSecret(accessToken),
-      refreshTokenEncrypted: institutionId ?? null,
-      scopes,
+      institutionId: institutionId ?? null,
     })
     .onConflictDoUpdate({
-      target: [providerTokens.userId, providerTokens.provider],
+      target: [plaidItems.userId, plaidItems.itemId],
       set: {
         accessTokenEncrypted: encryptSecret(accessToken),
-        refreshTokenEncrypted: institutionId ?? null,
-        scopes,
+        institutionId: institutionId ?? null,
         updatedAt: new Date(),
       },
     });
+
+  // Stop using legacy single-row Plaid slot in provider_tokens (avoids confusion).
+  await db
+    .delete(providerTokens)
+    .where(and(eq(providerTokens.userId, userId), eq(providerTokens.provider, "plaid")));
 
   return connection;
 }
