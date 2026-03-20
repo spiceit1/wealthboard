@@ -31,6 +31,13 @@ export default async function ConnectionsPage() {
   const userId = await getDemoUserId();
   const rows = userId ? await getConnectionsOverview(userId) : [];
   const adapterModes = getProviderAdapterModes();
+  const plaidKeysPresent = Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+  const byProvider = new Map(rows.map((row) => [row.provider, row]));
+  const providerOrder: Array<"plaid" | "snaptrade" | "coingecko"> = [
+    "plaid",
+    "snaptrade",
+    "coingecko",
+  ];
 
   return (
     <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
@@ -41,10 +48,29 @@ export default async function ConnectionsPage() {
         <p className="text-sm text-muted-foreground">
           Provider adapters are active in {env.MOCK_MODE ? "mock mode" : "real mode"}.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Plaid status: env <span className="font-medium uppercase">{env.PLAID_ENV}</span>, adapter{" "}
+          <span className="font-medium capitalize">{adapterModes.plaid}</span>, keys{" "}
+          <span className="font-medium">{plaidKeysPresent ? "present" : "missing"}</span>.
+        </p>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {rows.map((row) => {
+        {providerOrder.map((provider) => {
+          const row =
+            byProvider.get(provider) ??
+            ({
+              id: `virtual-${provider}`,
+              provider,
+              displayName:
+                provider === "plaid"
+                  ? "Plaid - Not Connected"
+                  : provider === "snaptrade"
+                    ? "SnapTrade - Robinhood"
+                    : "CoinGecko - Manual Crypto",
+              status: "inactive",
+              lastSyncedAt: null,
+            } as const);
           const configured = isProviderConfigured(row.provider);
           const mode = adapterModes[row.provider];
           return (

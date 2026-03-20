@@ -1,7 +1,10 @@
 import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
-config({ path: ".env.local" });
+const localEnv = config({ path: ".env.local" });
+if (localEnv.parsed) {
+  Object.assign(process.env, localEnv.parsed);
+}
 config();
 
 if (!process.env.DATABASE_URL) {

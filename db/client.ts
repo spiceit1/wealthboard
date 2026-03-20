@@ -2,7 +2,10 @@ import { config } from "dotenv";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
-config({ path: ".env.local" });
+const localEnv = config({ path: ".env.local" });
+if (localEnv.parsed) {
+  Object.assign(process.env, localEnv.parsed);
+}
 config();
 
 import { env } from "@/lib/env";

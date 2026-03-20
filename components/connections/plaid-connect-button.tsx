@@ -20,6 +20,22 @@ type Props = {
   disabled?: boolean;
 };
 
+type ApiErrorResponse = {
+  message?: string;
+  error?: string;
+  details?: {
+    type?: string;
+    code?: string;
+    requestId?: string;
+  };
+};
+
+type PlaidExitError = {
+  error_message?: string;
+  error_code?: string;
+  error_type?: string;
+};
+
 export function PlaidConnectButton({ disabled = false }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -41,8 +57,9 @@ export function PlaidConnectButton({ disabled = false }: Props) {
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.message ?? "Unable to exchange Plaid token.");
+        const payload = (await response.json().catch(() => ({}))) as ApiErrorResponse;
+        const code = payload?.details?.code ? ` (${payload.details.code})` : "";
+        throw new Error((payload?.message ?? "Unable to exchange Plaid token.") + code);
       }
 
       const payload = (await response.json()) as ExchangeResponse;
@@ -60,7 +77,12 @@ export function PlaidConnectButton({ disabled = false }: Props) {
   const { open, ready } = usePlaidLink({
     token: linkToken,
     onSuccess,
-    onExit: () => {
+    onExit: (exitError: PlaidExitError | null) => {
+      if (exitError) {
+        const code = exitError.error_code ? ` (${exitError.error_code})` : "";
+        const message = exitError.error_message ?? "Plaid Link closed before completing connection.";
+        setError(`${message}${code}`);
+      }
       setShouldOpen(false);
     },
   });
@@ -79,14 +101,22 @@ export function PlaidConnectButton({ disabled = false }: Props) {
     setLoading(true);
     setError(null);
     try {
+      const redirectUri =
+        typeof window !== "undefined" && window.location.origin.startsWith("https://")
+          ? `${window.location.origin}/connections`
+          : undefined;
+
       const response = await fetch("/api/plaid/link-token", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          redirectUri,
+        }),
       });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.message ?? "Unable to create Plaid link token.");
+        const payload = (await response.json().catch(() => ({}))) as ApiErrorResponse;
+        const code = payload?.details?.code ? ` (${payload.details.code})` : "";
+        throw new Error((payload?.message ?? "Unable to create Plaid link token.") + code);
       }
       const payload = (await response.json()) as LinkTokenResponse;
       setLinkToken(payload.linkToken);

@@ -27,7 +27,10 @@ function jitter(seed: number, magnitude: number) {
   return Math.sin(seed) * magnitude + Math.cos(seed * 0.61) * magnitude * 0.4;
 }
 
-config({ path: ".env.local" });
+const localEnv = config({ path: ".env.local" });
+if (localEnv.parsed) {
+  Object.assign(process.env, localEnv.parsed);
+}
 config();
 
 async function seed() {

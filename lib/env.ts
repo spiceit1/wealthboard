@@ -1,7 +1,10 @@
 import { config } from "dotenv";
 import { z } from "zod";
 
-config({ path: ".env.local" });
+const localEnv = config({ path: ".env.local" });
+if (localEnv.parsed) {
+  Object.assign(process.env, localEnv.parsed);
+}
 config();
 
 const envSchema = z

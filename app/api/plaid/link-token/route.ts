@@ -10,6 +10,18 @@ const requestSchema = z
   })
   .optional();
 
+type PlaidApiError = {
+  response?: {
+    status?: number;
+    data?: {
+      error_type?: string;
+      error_code?: string;
+      error_message?: string;
+      request_id?: string;
+    };
+  };
+};
+
 export async function POST(request: Request) {
   try {
     const userId = await getDemoUserId();
@@ -37,12 +49,25 @@ export async function POST(request: Request) {
       { status: 200 },
     );
   } catch (error) {
+    const plaidError = error as PlaidApiError;
+    const status = plaidError.response?.status ?? 500;
+    const details = plaidError.response?.data;
+
     return NextResponse.json(
       {
-        message: "Failed to create Plaid link token.",
+        message:
+          details?.error_message ??
+          (error instanceof Error ? error.message : "Failed to create Plaid link token."),
         error: error instanceof Error ? error.message : "Unknown error",
+        details: details
+          ? {
+              type: details.error_type,
+              code: details.error_code,
+              requestId: details.request_id,
+            }
+          : undefined,
       },
-      { status: 500 },
+      { status },
     );
   }
 }
