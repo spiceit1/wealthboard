@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { connections, plaidItems, providerTokens } from "@/db/schema";
+import { accounts, connections, plaidItems, providerTokens } from "@/db/schema";
 import { getPlaidClient } from "@/lib/plaid";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 
@@ -123,6 +123,24 @@ export async function savePlaidAccessToken(params: {
         updatedAt: new Date(),
       },
     });
+
+  // If the same institution is relinked, keep the newest Item and remove older ones for that institution.
+  if (institutionName) {
+    const plaidConnections = await db.query.connections.findMany({
+      where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
+    });
+    const normalized = institutionName.trim().toLowerCase();
+    const staleSameInstitution = plaidConnections.filter(
+      (c) => c.externalId !== itemId && c.displayName.trim().toLowerCase() === normalized,
+    );
+    for (const stale of staleSameInstitution) {
+      await db.delete(accounts).where(eq(accounts.connectionId, stale.id));
+      await db
+        .delete(plaidItems)
+        .where(and(eq(plaidItems.userId, userId), eq(plaidItems.itemId, stale.externalId)));
+      await db.delete(connections).where(eq(connections.id, stale.id));
+    }
+  }
 
   // Stop using legacy single-row Plaid slot in provider_tokens (avoids confusion).
   await db

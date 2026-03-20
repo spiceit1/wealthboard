@@ -45,7 +45,6 @@ export default async function ConnectionsPage() {
   const rows = userId ? await getConnectionsOverview(userId) : [];
   const adapterModes = getProviderAdapterModes();
   const plaidKeysPresent = Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
-  const byProvider = new Map(rows.map((row) => [row.provider, row]));
   const providerOrder: Array<"plaid" | "snaptrade" | "coingecko"> = [
     "plaid",
     "snaptrade",
@@ -87,8 +86,15 @@ export default async function ConnectionsPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {providerOrder.map((provider) => {
+          const providerRows = rows
+            .filter((row) => row.provider === provider)
+            .sort((a, b) => {
+              const aTime = a.lastSyncedAt ? new Date(a.lastSyncedAt).getTime() : 0;
+              const bTime = b.lastSyncedAt ? new Date(b.lastSyncedAt).getTime() : 0;
+              return bTime - aTime;
+            });
           const row =
-            byProvider.get(provider) ??
+            providerRows[0] ??
             ({
               id: `virtual-${provider}`,
               provider,
@@ -101,6 +107,7 @@ export default async function ConnectionsPage() {
               status: "inactive",
               lastSyncedAt: null,
             } as const);
+          const activeCount = providerRows.filter((item) => item.status === "active").length;
           const configured = isProviderConfigured(row.provider);
           const mode = adapterModes[row.provider];
           return (
@@ -116,12 +123,21 @@ export default async function ConnectionsPage() {
                         : "Missing Keys"}
                   </Badge>
                 </div>
-                <CardDescription>{row.displayName}</CardDescription>
+                <CardDescription>
+                  {row.provider === "plaid" && providerRows.length > 0
+                    ? `${providerRows.length} linked institution${providerRows.length === 1 ? "" : "s"}`
+                    : row.displayName}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p className="text-muted-foreground">{providerSecurityNotes[row.provider]}</p>
                 <p>
-                  Status: <span className="font-medium capitalize">{row.status}</span>
+                  Status:{" "}
+                  <span className="font-medium capitalize">
+                    {row.provider === "plaid" && providerRows.length > 0
+                      ? `${activeCount}/${providerRows.length} active`
+                      : row.status}
+                  </span>
                 </p>
                 <p>
                   Last synced:{" "}
@@ -133,6 +149,19 @@ export default async function ConnectionsPage() {
                   Adapter mode:{" "}
                   <span className="font-medium capitalize">{mode}</span>
                 </p>
+                {row.provider === "plaid" && providerRows.length > 0 && (
+                  <div className="space-y-1 rounded-md border p-2">
+                    <p className="text-xs font-medium text-muted-foreground">Linked Plaid institutions</p>
+                    {providerRows.map((item) => (
+                      <p key={item.id} className="text-xs">
+                        <span className="font-medium">{item.displayName}</span>{" "}
+                        <span className="text-muted-foreground">
+                          ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {row.provider === "plaid" && <PlaidConnectButton />}
               </CardContent>
             </Card>
