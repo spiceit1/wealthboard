@@ -76,6 +76,7 @@ type DashboardResponse = {
     timestamp: string;
     level: "info" | "warning" | "error";
   }>;
+  mockMode: boolean;
 };
 
 function formatUSD(value: number) {
@@ -199,11 +200,13 @@ export function DashboardOverview() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">WealthBoard Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Database-backed snapshots with mock providers and chart-ready history.
+            Database-backed snapshots with chart-ready history.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">Mock Mode</Badge>
+          <Badge variant={dashboardQuery.data?.mockMode ? "secondary" : "outline"}>
+            {dashboardQuery.data?.mockMode ? "Mock Mode" : "Live Mode"}
+          </Badge>
           <Button onClick={() => syncMutation.mutate()} disabled={isSyncing}>
             <RefreshCw className="mr-2 h-4 w-4" />
             {isSyncing ? "Syncing..." : "Get My Latest Info"}

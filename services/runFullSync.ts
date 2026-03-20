@@ -199,8 +199,10 @@ async function fetchStockPriceStooq(symbol: string): Promise<number | null> {
     });
     if (!response.ok) continue;
     const csv = (await response.text()).trim();
-    const [, row] = csv.split(/\r?\n/);
-    if (!row) continue;
+    const lines = csv.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) continue;
+    // Stooq may return either header+row or only one data row.
+    const row = lines.length > 1 ? lines[1] : lines[0];
     const columns = row.split(",");
     const close = Number(columns[4]);
     if (Number.isFinite(close) && close > 0) return close;
@@ -242,6 +244,9 @@ async function refreshManualHoldingValuations(userId: string) {
   const cryptoPriceResult = await adapters.coingecko.fetchPrices(cryptoSymbols);
   const cryptoPriceMap = new Map(cryptoPriceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
 
+  let updatedStockCount = 0;
+  let updatedCryptoCount = 0;
+
   for (const holding of manualRows) {
     const symbol = holding.symbol.toUpperCase();
     const matchedPrice =
@@ -268,6 +273,8 @@ async function refreshManualHoldingValuations(userId: string) {
       pricedAt: new Date(),
       source: holding.assetClass === "stock" ? "snaptrade" : "coingecko",
     });
+    if (holding.assetClass === "stock") updatedStockCount += 1;
+    if (holding.assetClass === "crypto") updatedCryptoCount += 1;
   }
 
   const rowsByAccount = await db.query.accounts.findMany({
@@ -289,7 +296,7 @@ async function refreshManualHoldingValuations(userId: string) {
       .where(eq(accounts.id, account.id));
   }
 
-  return { stockSymbols, cryptoSymbols };
+  return { stockSymbols, cryptoSymbols, updatedStockCount, updatedCryptoCount };
 }
 
 async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncSummary | null> {
@@ -396,6 +403,27 @@ async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncS
   return { cash, stocks, crypto, total };
 }
 
+async function runPriceRefreshSteps(
+  userId: string,
+  pushEvent: (message: string, provider?: "plaid" | "snaptrade" | "coingecko") => Promise<void>,
+) {
+  await pushEvent("Using manual holdings for stocks and crypto", "snaptrade");
+  try {
+    await removeAutoStockHoldings(userId);
+    await pushEvent("Fetching latest market prices for manual holdings", "coingecko");
+    const result = await refreshManualHoldingValuations(userId);
+    await pushEvent(
+      `Updated prices for ${result.updatedStockCount}/${result.stockSymbols.length} stock symbols and ${result.updatedCryptoCount}/${result.cryptoSymbols.length} crypto symbols`,
+      "coingecko",
+    );
+  } catch (error) {
+    await pushEvent(
+      `Manual holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      "coingecko",
+    );
+  }
+}
+
 async function executeFullSync(syncRunId: string, userId: string): Promise<SyncRunResult> {
   const events: SyncEvent[] = [];
   let order = 1;
@@ -445,22 +473,64 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
       );
     }
 
-    await pushEvent("Using manual holdings for stocks and crypto", "snaptrade");
-    try {
-      await removeAutoStockHoldings(userId);
-      await pushEvent("Fetching latest market prices for manual holdings", "coingecko");
-      const result = await refreshManualHoldingValuations(userId);
-      await pushEvent(
-        `Updated prices for ${result.stockSymbols.length} stock symbols and ${result.cryptoSymbols.length} crypto symbols`,
-        "coingecko",
-      );
-    } catch (error) {
-      await pushEvent(
-        `Manual holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        "coingecko",
-      );
-    }
+    await runPriceRefreshSteps(userId, pushEvent);
 
+    await pushEvent("Calculating net worth");
+    summary = await persistSnapshot(userId, syncRunId);
+    await pushEvent("Saving snapshot");
+
+    await db
+      .update(syncRuns)
+      .set({
+        status: "completed",
+        completedAt: new Date(),
+        errorMessage: null,
+      })
+      .where(eq(syncRuns.id, syncRunId));
+    await pushEvent("Sync complete");
+
+    return {
+      runId: syncRunId,
+      status: "completed",
+      events,
+      summary,
+    };
+  } catch (error) {
+    await db
+      .update(syncRuns)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        errorMessage: error instanceof Error ? error.message : "Unknown sync error",
+      })
+      .where(eq(syncRuns.id, syncRunId));
+    await pushEvent("Sync failed");
+    return {
+      runId: syncRunId,
+      status: "failed",
+      events,
+      summary,
+    };
+  }
+}
+
+async function executePriceOnlySync(syncRunId: string, userId: string): Promise<SyncRunResult> {
+  const events: SyncEvent[] = [];
+  let order = 1;
+  let summary: SyncSummary | null = null;
+
+  const pushEvent = async (
+    message: string,
+    provider?: "plaid" | "snaptrade" | "coingecko",
+  ) => {
+    const event = await appendEvent(syncRunId, order, message, provider);
+    order += 1;
+    events.push(event);
+  };
+
+  await pushEvent("Starting price-only sync job");
+  try {
+    await runPriceRefreshSteps(userId, pushEvent);
     await pushEvent("Calculating net worth");
     summary = await persistSnapshot(userId, syncRunId);
     await pushEvent("Saving snapshot");
@@ -578,6 +648,16 @@ export async function triggerSyncInBackground(userId: string, trigger: SyncTrigg
   const run = await createSyncRun(userId, trigger);
   if (run.started) {
     const promise = executeFullSync(run.runId, userId).then(() => undefined);
+    inFlightRuns.set(run.runId, promise);
+    void promise.finally(() => inFlightRuns.delete(run.runId));
+  }
+  return run;
+}
+
+export async function triggerPriceOnlySyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
+  const run = await createSyncRun(userId, trigger);
+  if (run.started) {
+    const promise = executePriceOnlySync(run.runId, userId).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
     void promise.finally(() => inFlightRuns.delete(run.runId));
   }

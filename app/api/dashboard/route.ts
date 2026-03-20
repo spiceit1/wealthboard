@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { env } from "@/lib/env";
 import { getDashboardData, getDemoUserId } from "@/services/dashboardData";
 
 export async function GET() {
@@ -12,11 +13,15 @@ export async function GET() {
         history: [],
         latestSync: null,
         events: [],
+        mockMode: env.MOCK_MODE,
       },
       { status: 200 },
     );
   }
 
   const data = await getDashboardData(userId);
-  return NextResponse.json(data);
+  return NextResponse.json({
+    ...data,
+    mockMode: env.MOCK_MODE,
+  });
 }
