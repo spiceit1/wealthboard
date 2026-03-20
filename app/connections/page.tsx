@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlaidConnectButton } from "@/components/connections/plaid-connect-button";
 import { env } from "@/lib/env";
+import { formatDateTimeEastern } from "@/lib/formatters";
 import { getProviderAdapterModes } from "@/providers/adapters";
 import { getConnectionsOverview, getDemoUserId } from "@/services/dashboardData";
 
@@ -125,7 +126,7 @@ export default async function ConnectionsPage() {
                 <p>
                   Last synced:{" "}
                   <span className="font-medium">
-                    {row.lastSyncedAt ? new Date(row.lastSyncedAt).toLocaleString() : "Never"}
+                    {formatDateTimeEastern(row.lastSyncedAt, "Never")}
                   </span>
                 </p>
                 <p>

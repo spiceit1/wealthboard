@@ -1,6 +1,6 @@
 import { AppNav } from "@/components/shared/app-nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatUSD } from "@/lib/formatters";
+import { formatDateTimeEastern, formatUSD } from "@/lib/formatters";
 import { getAccountsOverview, getDemoUserId } from "@/services/dashboardData";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ export default async function AccountsPage() {
                     <td className="py-2 pr-4 capitalize">{row.type.replace("_", " ")}</td>
                     <td className="py-2 pr-4">{formatUSD(row.balance)}</td>
                     <td className="py-2 pr-4">
-                      {row.balanceAsOf ? new Date(row.balanceAsOf).toLocaleString() : "-"}
+                      {formatDateTimeEastern(row.balanceAsOf)}
                     </td>
                   </tr>
                 ))}

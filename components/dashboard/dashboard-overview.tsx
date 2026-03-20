@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { useEffect, useMemo, useState } from "react";
 
+import { formatTimeEastern } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -362,7 +363,7 @@ export function DashboardOverview() {
           <ul className="space-y-2 text-sm">
             {activeEvents.map((event) => (
               <li key={`${event.timestamp}-${event.message}`} className="text-muted-foreground">
-                [{new Date(event.timestamp).toLocaleTimeString()}] {event.message}
+                [{formatTimeEastern(event.timestamp)}] {event.message}
               </li>
             ))}
             {!activeEvents.length && (

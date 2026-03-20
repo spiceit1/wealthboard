@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/shared/app-nav";
+import { formatDateTimeEastern } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDemoUserId, getSyncRuns } from "@/services/dashboardData";
 
@@ -38,7 +39,7 @@ export default async function SyncLogsPage() {
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id} className="border-b">
-                    <td className="py-2 pr-4">{new Date(run.startedAt).toLocaleString()}</td>
+                    <td className="py-2 pr-4">{formatDateTimeEastern(run.startedAt)}</td>
                     <td className="py-2 pr-4 capitalize">{run.trigger}</td>
                     <td
                       className={`py-2 pr-4 capitalize ${
@@ -52,7 +53,7 @@ export default async function SyncLogsPage() {
                       {run.status}
                     </td>
                     <td className="py-2 pr-4">
-                      {run.completedAt ? new Date(run.completedAt).toLocaleString() : "-"}
+                      {formatDateTimeEastern(run.completedAt)}
                     </td>
                     <td className="py-2 pr-4">{run.lastEvent ?? run.errorMessage ?? "-"}</td>
                   </tr>

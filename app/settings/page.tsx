@@ -1,5 +1,6 @@
 import { AppNav } from "@/components/shared/app-nav";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTimeEastern } from "@/lib/formatters";
 import { env } from "@/lib/env";
 import { getDemoUserId, getSettingsOverview } from "@/services/dashboardData";
 
@@ -44,7 +45,7 @@ export default async function SettingsPage() {
             <p>
               Next expected run (NY):{" "}
               <span className="font-medium">
-                {data?.nextExpectedNyNine ? new Date(data.nextExpectedNyNine).toLocaleString() : "-"}
+                {formatDateTimeEastern(data?.nextExpectedNyNine)}
               </span>
             </p>
           </CardContent>
