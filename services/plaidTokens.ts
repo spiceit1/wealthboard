@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { connections, providerTokens } from "@/db/schema";
+import { accounts, connections, providerTokens } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/secrets";
 
 export async function getPlaidAccessToken(userId: string) {
@@ -53,6 +53,20 @@ export async function savePlaidAccessToken(params: {
       },
     })
     .returning();
+
+  // Only one Plaid access token is stored per user; remove other Items' connections
+  // and their accounts so we don't show duplicate bank rows from old Links.
+  const stalePlaidConnections = await db.query.connections.findMany({
+    where: and(
+      eq(connections.userId, userId),
+      eq(connections.provider, "plaid"),
+      ne(connections.externalId, itemId),
+    ),
+  });
+  for (const stale of stalePlaidConnections) {
+    await db.delete(accounts).where(eq(accounts.connectionId, stale.id));
+    await db.delete(connections).where(eq(connections.id, stale.id));
+  }
 
   await db
     .insert(providerTokens)

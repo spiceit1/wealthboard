@@ -66,5 +66,8 @@ export async function fetchPlaidBalances(userId?: string): Promise<ProviderResul
     source: "plaid",
     fetchedAt: new Date().toISOString(),
     data,
+    meta: {
+      plaidItemId: response.data.item.item_id,
+    },
   };
 }

@@ -12,7 +12,7 @@ import {
   syncRuns,
 } from "@/db/schema";
 import { env } from "@/lib/env";
-import { getProviderAdapters } from "@/providers/adapters";
+import { getProviderAdapterModes, getProviderAdapters } from "@/providers/adapters";
 import type { AccountBalance, Position } from "@/providers/types";
 
 export type SyncEvent = {
@@ -105,6 +105,35 @@ async function prunePlaidAccountsNotInFetch(
   for (const row of rows) {
     if (!activeProviderIds.has(row.providerAccountId)) {
       await db.delete(accounts).where(eq(accounts.id, row.id));
+    }
+  }
+}
+
+/** Same bank account relinked via a new Plaid Item gets a new account_id — drops duplicate display rows. */
+async function dedupeCashAccountsByDisplayKey(userId: string, winningProviderIds: Set<string>) {
+  const rows = await db.query.accounts.findMany({
+    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+  });
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = `${row.institutionName.trim().toLowerCase()}|${row.name.trim().toLowerCase()}|${row.type}`;
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  for (const [, list] of groups) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => {
+      const aWin = winningProviderIds.has(a.providerAccountId) ? 1 : 0;
+      const bWin = winningProviderIds.has(b.providerAccountId) ? 1 : 0;
+      if (bWin !== aWin) return bWin - aWin;
+      const aTime = a.balanceAsOf?.getTime() ?? 0;
+      const bTime = b.balanceAsOf?.getTime() ?? 0;
+      return bTime - aTime;
+    });
+    const [, ...duplicates] = list;
+    for (const dup of duplicates) {
+      await db.delete(accounts).where(eq(accounts.id, dup.id));
     }
   }
 }
@@ -359,6 +388,7 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
   let order = 1;
   let summary: SyncSummary | null = null;
   const adapters = getProviderAdapters();
+  const adapterModes = getProviderAdapterModes();
 
   const pushEvent = async (
     message: string,
@@ -376,17 +406,24 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
       await pushEvent("Fetching Plaid bank balances", "plaid");
       const plaid = await adapters.plaid.fetchBalances(userId);
       await removeLegacyMockInstitutionAccounts(userId);
-      const plaidConnection = await db.query.connections.findFirst({
-        where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
-      });
+      const itemId = plaid.meta?.plaidItemId;
+      const plaidConnection = itemId
+        ? await db.query.connections.findFirst({
+            where: and(
+              eq(connections.userId, userId),
+              eq(connections.provider, "plaid"),
+              eq(connections.externalId, itemId),
+            ),
+          })
+        : await db.query.connections.findFirst({
+            where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
+          });
       const plaidConnectionId = plaidConnection?.id ?? null;
+      const activePlaidIds = new Set(plaid.data.map((a) => a.providerAccountId));
       await upsertCashAccounts(userId, plaid.data, { connectionId: plaidConnectionId });
-      if (plaidConnectionId) {
-        await prunePlaidAccountsNotInFetch(
-          userId,
-          plaidConnectionId,
-          new Set(plaid.data.map((a) => a.providerAccountId)),
-        );
+      if (adapterModes.plaid === "real" && plaidConnectionId) {
+        await prunePlaidAccountsNotInFetch(userId, plaidConnectionId, activePlaidIds);
+        await dedupeCashAccountsByDisplayKey(userId, activePlaidIds);
       }
       for (const account of plaid.data) {
         await pushEvent(`Saved ${account.name} balance`, "plaid");

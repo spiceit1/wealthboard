@@ -22,4 +22,8 @@ export type ProviderResult<T> = {
   source: ProviderSource;
   fetchedAt: string;
   data: T;
+  /** e.g. real Plaid balance calls set `plaidItemId` for the active Item */
+  meta?: {
+    plaidItemId?: string;
+  };
 };
