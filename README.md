@@ -81,6 +81,7 @@ npm run db:generate
 npm run db:migrate
 npm run db:seed
 npm run db:cleanup-duplicates   # optional: stale Plaid Items + duplicate checking/savings rows
+npm run db:remove-legacy-accounts  # optional: removes fixed legacy rows (edit list in script)
 ```
 
 If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeholder.
