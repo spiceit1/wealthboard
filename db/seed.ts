@@ -102,27 +102,9 @@ async function seed() {
     },
   ]);
 
-  const [tdChecking, baskSavings, robinhoodBrokerage, btcWallet, ethWallet] = await db
+  const [robinhoodBrokerage, btcWallet, ethWallet] = await db
     .insert(accounts)
     .values([
-      {
-        userId: user.id,
-        connectionId: plaidConnection.id,
-        providerAccountId: "td-checking-001",
-        institutionName: "TD Bank",
-        name: "TD Bank Checking",
-        type: "checking",
-        lastBalance: "12845.22",
-      },
-      {
-        userId: user.id,
-        connectionId: plaidConnection.id,
-        providerAccountId: "bask-savings-001",
-        institutionName: "BASK Bank",
-        name: "BASK Savings",
-        type: "savings",
-        lastBalance: "30366.78",
-      },
       {
         userId: user.id,
         connectionId: snaptradeConnection.id,
@@ -262,78 +244,70 @@ async function seed() {
     {
       syncRunId: syncRun.id,
       provider: "plaid",
-      message: "Saved TD Bank checking balance",
+      message: "Plaid: no seeded cash accounts (connect Link for real banks)",
       level: "info",
       eventOrder: 3,
-    },
-    {
-      syncRunId: syncRun.id,
-      provider: "plaid",
-      message: "Saved BASK savings balance",
-      level: "info",
-      eventOrder: 4,
     },
     {
       syncRunId: syncRun.id,
       provider: "snaptrade",
       message: "Fetching Robinhood portfolio",
       level: "info",
-      eventOrder: 5,
+      eventOrder: 4,
     },
     {
       syncRunId: syncRun.id,
       provider: "snaptrade",
       message: "Retrieved 12 positions",
       level: "info",
-      eventOrder: 6,
+      eventOrder: 5,
     },
     {
       syncRunId: syncRun.id,
       provider: "coingecko",
       message: "Fetching crypto prices",
       level: "info",
-      eventOrder: 7,
+      eventOrder: 6,
     },
     {
       syncRunId: syncRun.id,
       provider: "coingecko",
       message: "Calculating net worth",
       level: "info",
-      eventOrder: 8,
+      eventOrder: 7,
     },
     {
       syncRunId: syncRun.id,
       provider: "coingecko",
       message: "Saving snapshot",
       level: "info",
-      eventOrder: 9,
+      eventOrder: 8,
     },
     {
       syncRunId: syncRun.id,
       provider: "coingecko",
       message: "Sync complete",
       level: "info",
-      eventOrder: 10,
+      eventOrder: 9,
     },
   ]);
 
   const today = new Date();
-  let prevTotal = 521_640;
+  let prevTotal: number | null = null;
   let lastSnapshotId = "";
 
   for (let i = 89; i >= 0; i -= 1) {
     const day = new Date(today);
     day.setDate(day.getDate() - i);
 
-    const baseCash = 43_212 + jitter(i, 260);
+    const cash = 0;
     const baseStocks = 482_211 + jitter(i * 1.23, 4800);
     const baseCrypto = 14_500 + jitter(i * 0.83, 1200);
 
-    const cash = round2(baseCash);
     const stocks = round2(baseStocks);
     const crypto = round2(Math.max(3000, baseCrypto));
     const total = round2(cash + stocks + crypto);
-    const dailyChange = round2(total - prevTotal);
+    const dailyChange = prevTotal === null ? 0 : round2(total - prevTotal);
     prevTotal = total;
 
     const [snapshot] = await db
@@ -354,22 +328,6 @@ async function seed() {
   }
 
   await db.insert(snapshotItems).values([
-    {
-      snapshotId: lastSnapshotId,
-      category: "cash_account",
-      accountId: tdChecking.id,
-      label: "TD Checking",
-      value: "12845.22",
-      meta: { institution: "TD Bank" },
-    },
-    {
-      snapshotId: lastSnapshotId,
-      category: "cash_account",
-      accountId: baskSavings.id,
-      label: "BASK Savings",
-      value: "30366.78",
-      meta: { institution: "BASK Bank" },
-    },
     {
       snapshotId: lastSnapshotId,
       category: "brokerage_position",
