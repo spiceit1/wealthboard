@@ -1,7 +1,16 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { accounts, dailySnapshots, holdings, prices, snapshotItems, syncRunEvents, syncRuns } from "@/db/schema";
+import {
+  accounts,
+  connections,
+  dailySnapshots,
+  holdings,
+  prices,
+  snapshotItems,
+  syncRunEvents,
+  syncRuns,
+} from "@/db/schema";
 import { env } from "@/lib/env";
 import { getProviderAdapters } from "@/providers/adapters";
 import type { AccountBalance, Position } from "@/providers/types";
@@ -73,18 +82,48 @@ async function appendEvent(
   };
 }
 
-async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
+function resolveCashInstitutionLabel(account: AccountBalance): string {
+  if (account.institutionName) return account.institutionName;
+  if (account.name.includes("TD")) return "TD Bank";
+  if (account.name.includes("BASK")) return "BASK Bank";
+  return "Linked bank";
+}
+
+/** Removes rows mislabeled by an old bug (anything not TD/BASK became "Mock Institution"). */
+async function removeLegacyMockInstitutionAccounts(userId: string) {
+  await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.institutionName, "Mock Institution")));
+}
+
+async function prunePlaidAccountsNotInFetch(
+  userId: string,
+  connectionId: string,
+  activeProviderIds: Set<string>,
+) {
+  const rows = await db.query.accounts.findMany({
+    where: and(eq(accounts.userId, userId), eq(accounts.connectionId, connectionId)),
+  });
+  for (const row of rows) {
+    if (!activeProviderIds.has(row.providerAccountId)) {
+      await db.delete(accounts).where(eq(accounts.id, row.id));
+    }
+  }
+}
+
+async function upsertCashAccounts(
+  userId: string,
+  data: AccountBalance[],
+  options: { connectionId: string | null },
+) {
+  const { connectionId } = options;
   for (const account of data) {
+    const institutionName = resolveCashInstitutionLabel(account);
     await db
       .insert(accounts)
       .values({
         userId,
+        connectionId,
         providerAccountId: account.providerAccountId,
-        institutionName: account.name.includes("TD")
-          ? "TD Bank"
-          : account.name.includes("BASK")
-            ? "BASK Bank"
-            : "Mock Institution",
+        institutionName,
         name: account.name,
         type: account.type,
         currency: account.currency,
@@ -94,11 +133,8 @@ async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
       .onConflictDoUpdate({
         target: [accounts.userId, accounts.providerAccountId],
         set: {
-          institutionName: account.name.includes("TD")
-            ? "TD Bank"
-            : account.name.includes("BASK")
-              ? "BASK Bank"
-              : "Mock Institution",
+          connectionId,
+          institutionName,
           name: account.name,
           type: account.type,
           currency: account.currency,
@@ -339,7 +375,19 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
       const plaid = await adapters.plaid.fetchBalances(userId);
-      await upsertCashAccounts(userId, plaid.data);
+      await removeLegacyMockInstitutionAccounts(userId);
+      const plaidConnection = await db.query.connections.findFirst({
+        where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
+      });
+      const plaidConnectionId = plaidConnection?.id ?? null;
+      await upsertCashAccounts(userId, plaid.data, { connectionId: plaidConnectionId });
+      if (plaidConnectionId) {
+        await prunePlaidAccountsNotInFetch(
+          userId,
+          plaidConnectionId,
+          new Set(plaid.data.map((a) => a.providerAccountId)),
+        );
+      }
       for (const account of plaid.data) {
         await pushEvent(`Saved ${account.name} balance`, "plaid");
       }

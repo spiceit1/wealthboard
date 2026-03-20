@@ -3,6 +3,8 @@ export type ProviderSource = "plaid" | "snaptrade" | "coingecko";
 export type AccountBalance = {
   providerAccountId: string;
   name: string;
+  /** Resolved from Plaid Item / institutions API when available */
+  institutionName?: string;
   type: "checking" | "savings" | "brokerage" | "crypto_wallet";
   balance: number;
   currency: "USD";
