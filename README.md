@@ -80,6 +80,7 @@ App runs at [http://localhost:3000](http://localhost:3000).
 npm run db:generate
 npm run db:migrate
 npm run db:seed
+npm run db:cleanup-duplicates   # optional: stale Plaid Items + duplicate checking/savings rows
 ```
 
 If migrations fail with `ENOTFOUND host`, your `DATABASE_URL` is still a placeholder.
