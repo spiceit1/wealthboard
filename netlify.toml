@@ -6,6 +6,9 @@ publish = ".next"
 directory = "netlify/functions"
 node_bundler = "esbuild"
 
+[functions."scheduled-sync"]
+schedule = "0 13,14 * * *"
+
 [[plugins]]
 package = "@netlify/plugin-nextjs"
 
