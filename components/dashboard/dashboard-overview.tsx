@@ -116,7 +116,7 @@ async function fetchSyncProgress(runId: string): Promise<SyncResponse> {
 }
 
 export function DashboardOverview() {
-  const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("30D");
+  const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("1D");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [summaryPulse, setSummaryPulse] = useState(false);
   const previousAsOfRef = useRef<string | null>(null);
