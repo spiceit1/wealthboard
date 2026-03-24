@@ -37,11 +37,11 @@ export function LiveUpdatesBadge() {
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
         status.state === "healthy" &&
-          "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+          "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-300",
         status.state === "connecting" &&
-          "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+          "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/30 dark:text-amber-300",
         status.state === "degraded" &&
-          "bg-red-50 text-red-700 ring-1 ring-red-200",
+          "bg-destructive/10 text-destructive ring-1 ring-destructive/30",
       )}
     >
       <span

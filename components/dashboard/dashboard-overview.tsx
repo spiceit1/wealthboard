@@ -343,8 +343,9 @@ export function DashboardOverview() {
                   <button
                     key={option}
                     onClick={() => setRange(option)}
+                    aria-pressed={range === option}
                     className={cn(
-                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                       range === option
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground",

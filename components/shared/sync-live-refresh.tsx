@@ -39,6 +39,12 @@ export function SyncLiveRefresh() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let eventSource: EventSource | null = null;
     let failureCount = 0;
+    const clearPoll = () => {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    };
 
     const handleLatest = async (payload: LatestSyncResponse) => {
       const latest = payload.latest;
@@ -88,14 +94,25 @@ export function SyncLiveRefresh() {
         const retryInMs = Math.min(30_000, 1_000 * 2 ** Math.min(failureCount, 5));
         publishStatus({ state: "degraded", via: "poll", retryInMs });
       }
+      if (eventSource?.readyState === EventSource.OPEN) {
+        clearPoll();
+        return;
+      }
       const delay = Math.min(30_000, 2_000 * 2 ** Math.min(failureCount, 4));
       pollTimer = setTimeout(() => void pollOnce(), delay);
     };
 
     const startSse = () => {
       if (cancelled) return;
+      clearPoll();
       publishStatus({ state: "connecting", via: "sse" });
       eventSource = new EventSource("/api/sync/events");
+
+      eventSource.onopen = () => {
+        failureCount = 0;
+        clearPoll();
+        publishStatus({ state: "healthy", via: "sse" });
+      };
 
       eventSource.onmessage = (event) => {
         if (cancelled) return;
@@ -103,6 +120,7 @@ export function SyncLiveRefresh() {
           const payload = JSON.parse(event.data) as LatestSyncResponse;
           void handleLatest(payload);
           failureCount = 0;
+          clearPoll();
           publishStatus({ state: "healthy", via: "sse" });
         } catch {
           // Ignore malformed events and keep stream alive.

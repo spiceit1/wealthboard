@@ -23,31 +23,44 @@ export async function GET() {
       const encoder = new TextEncoder();
       let previousId: string | null = null;
       let previousStatus: string | null = null;
+      let closed = false;
+
+      const safeEnqueue = (chunk: string) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch {
+          // Connection likely closed by client.
+          closed = true;
+        }
+      };
 
       const sendSnapshot = async () => {
-        const latest = await getLatestSyncRunForUser(userId);
-        const changed =
-          (latest?.id ?? null) !== previousId || (latest?.status ?? null) !== previousStatus;
+        try {
+          const latest = await getLatestSyncRunForUser(userId);
+          const changed =
+            (latest?.id ?? null) !== previousId || (latest?.status ?? null) !== previousStatus;
 
-        if (changed) {
-          const affectedDomains =
-            latest == null
-              ? []
-              : latest.status === "running" || latest.status === "pending"
-                ? domainsForRunStart()
-                : domainsForRunFinish(latest.trigger);
-          controller.enqueue(
-            encoder.encode(
+          if (changed) {
+            const affectedDomains =
+              latest == null
+                ? []
+                : latest.status === "running" || latest.status === "pending"
+                  ? domainsForRunStart()
+                  : domainsForRunFinish(latest.trigger);
+            safeEnqueue(
               encodeSse({
                 latest,
                 affectedDomains,
               }),
-            ),
-          );
-          previousId = latest?.id ?? null;
-          previousStatus = latest?.status ?? null;
-        } else {
-          controller.enqueue(encoder.encode(": keepalive\n\n"));
+            );
+            previousId = latest?.id ?? null;
+            previousStatus = latest?.status ?? null;
+          } else {
+            safeEnqueue(": keepalive\n\n");
+          }
+        } catch {
+          safeEnqueue(": keepalive\n\n");
         }
       };
 
@@ -57,16 +70,22 @@ export async function GET() {
       }, 2000);
 
       const close = () => {
+        closed = true;
         if (timer !== null) clearInterval(timer);
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // no-op
+        }
       };
 
       // Auto-close long-lived connection to encourage clean reconnects.
       maxLife = setTimeout(close, 60_000);
 
-      controller.enqueue(encoder.encode(encodeSse({ connected: true }, "connected")));
+      safeEnqueue(encodeSse({ connected: true }, "connected"));
     },
     cancel() {
+      // Marking as closed prevents any further enqueue attempts.
       if (timer) clearInterval(timer);
       if (maxLife !== null) clearTimeout(maxLife);
     },
