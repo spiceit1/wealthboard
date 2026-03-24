@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -62,7 +62,8 @@ export async function getDashboardData(userId: string) {
         createdAt: dailySnapshots.createdAt,
       })
       .from(dailySnapshots)
-      .where(eq(dailySnapshots.userId, userId))
+      .innerJoin(syncRuns, eq(dailySnapshots.syncRunId, syncRuns.id))
+      .where(and(eq(dailySnapshots.userId, userId), eq(syncRuns.trigger, "scheduled")))
       .orderBy(desc(dailySnapshots.snapshotDate))
       .limit(90);
 
@@ -155,7 +156,8 @@ export async function getHistoryRows(userId: string) {
         dailyChange: dailySnapshots.dailyChange,
       })
       .from(dailySnapshots)
-      .where(eq(dailySnapshots.userId, userId))
+      .innerJoin(syncRuns, eq(dailySnapshots.syncRunId, syncRuns.id))
+      .where(and(eq(dailySnapshots.userId, userId), eq(syncRuns.trigger, "scheduled")))
       .orderBy(desc(dailySnapshots.snapshotDate));
   } catch {
     return [];
@@ -200,8 +202,10 @@ export async function getTrendRows(userId: string, days: number) {
     .orderBy(asc(dailySnapshots.snapshotDate));
 }
 
-export async function getSyncRuns(userId: string) {
+export async function getSyncRuns(userId: string, options?: { limit?: number; offset?: number }) {
   try {
+    const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
+    const offset = Math.max(options?.offset ?? 0, 0);
     const runs = await db
       .select({
         id: syncRuns.id,
@@ -214,7 +218,14 @@ export async function getSyncRuns(userId: string) {
       .from(syncRuns)
       .where(eq(syncRuns.userId, userId))
       .orderBy(desc(syncRuns.startedAt))
-      .limit(50);
+      .limit(limit)
+      .offset(offset);
+
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(syncRuns)
+      .where(eq(syncRuns.userId, userId));
+    const total = Number(countRow?.count ?? 0);
 
     const runIds = runs.map((run) => run.id);
     const events =
@@ -237,12 +248,18 @@ export async function getSyncRuns(userId: string) {
       lastEventByRun.set(event.syncRunId, event);
     }
 
-    return runs.map((run) => ({
-      ...run,
-      lastEvent: lastEventByRun.get(run.id)?.message ?? null,
-    }));
+    return {
+      total,
+      runs: runs.map((run) => ({
+        ...run,
+        lastEvent: lastEventByRun.get(run.id)?.message ?? null,
+      })),
+    };
   } catch {
-    return [];
+    return {
+      total: 0,
+      runs: [],
+    };
   }
 }
 

@@ -16,11 +16,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatDateTimeEastern, formatTimeEastern } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { RelativeTime } from "@/components/shared/relative-time";
 import {
   Card,
   CardContent,
@@ -97,7 +98,7 @@ function tooltipCurrency(value: unknown) {
 }
 
 async function fetchDashboard(): Promise<DashboardResponse> {
-  const response = await fetch("/api/dashboard", { method: "GET" });
+  const response = await fetch("/api/dashboard", { method: "GET", cache: "no-store" });
   if (!response.ok) throw new Error("Failed to fetch dashboard data.");
   return response.json();
 }
@@ -109,14 +110,16 @@ async function startManualSync(): Promise<SyncStartResponse> {
 }
 
 async function fetchSyncProgress(runId: string): Promise<SyncResponse> {
-  const response = await fetch(`/api/sync?runId=${runId}`, { method: "GET" });
+  const response = await fetch(`/api/sync?runId=${runId}`, { method: "GET", cache: "no-store" });
   if (!response.ok) throw new Error("Failed to fetch sync progress.");
   return response.json();
 }
 
 export function DashboardOverview() {
-  const [range, setRange] = useState<"7D" | "30D" | "90D" | "1Y" | "All">("30D");
+  const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("30D");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [summaryPulse, setSummaryPulse] = useState(false);
+  const previousAsOfRef = useRef<string | null>(null);
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
@@ -140,6 +143,8 @@ export function DashboardOverview() {
     },
   });
 
+  const activeSummary = syncProgressQuery.data?.summary ?? dashboardQuery.data?.summary;
+
   useEffect(() => {
     const status = syncProgressQuery.data?.status;
     if (status === "completed" || status === "failed") {
@@ -147,10 +152,26 @@ export function DashboardOverview() {
     }
   }, [dashboardQuery, syncProgressQuery.data?.status]);
 
+  useEffect(() => {
+    const nextAsOf = activeSummary?.asOf ?? null;
+    if (!nextAsOf) return;
+    if (previousAsOfRef.current == null) {
+      previousAsOfRef.current = nextAsOf;
+      return;
+    }
+    if (previousAsOfRef.current !== nextAsOf) {
+      setSummaryPulse(true);
+      const timer = setTimeout(() => setSummaryPulse(false), 1800);
+      previousAsOfRef.current = nextAsOf;
+      return () => clearTimeout(timer);
+    }
+  }, [activeSummary?.asOf]);
+
   const filteredHistory = useMemo(() => {
     const rows = dashboardQuery.data?.history ?? [];
     if (range === "All") return rows;
-    const limit = range === "7D" ? 7 : range === "30D" ? 30 : range === "90D" ? 90 : 365;
+    const limit =
+      range === "1D" ? 1 : range === "7D" ? 7 : range === "30D" ? 30 : range === "90D" ? 90 : 365;
     return rows.slice(Math.max(0, rows.length - limit));
   }, [dashboardQuery.data?.history, range]);
 
@@ -164,7 +185,6 @@ export function DashboardOverview() {
     ];
   }, [dashboardQuery.data?.summary]);
 
-  const activeSummary = syncProgressQuery.data?.summary ?? dashboardQuery.data?.summary;
   const activeEvents =
     syncProgressQuery.data?.events ??
     dashboardQuery.data?.events?.map((event) => ({
@@ -212,7 +232,7 @@ export function DashboardOverview() {
           </p>
           {activeSummary?.asOf && (
             <p className="text-xs text-muted-foreground">
-              As of {formatDateTimeEastern(activeSummary.asOf)}
+              As of {formatDateTimeEastern(activeSummary.asOf)} (<RelativeTime value={activeSummary.asOf} />)
             </p>
           )}
         </div>
@@ -231,28 +251,28 @@ export function DashboardOverview() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className={summaryPulse ? "animate-pulse" : undefined}>
           <CardHeader>
             <CardDescription>Total Net Worth</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.total ?? 0)}</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(activeSummary?.asOf)}</CardDescription>
           </CardHeader>
         </Card>
-        <Card>
+        <Card className={summaryPulse ? "animate-pulse" : undefined}>
           <CardHeader>
             <CardDescription>Cash</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.cash ?? 0)}</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(activeSummary?.cashAsOf)}</CardDescription>
           </CardHeader>
         </Card>
-        <Card>
+        <Card className={summaryPulse ? "animate-pulse" : undefined}>
           <CardHeader>
             <CardDescription>Stocks</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.stocks ?? 0)}</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(activeSummary?.stocksAsOf)}</CardDescription>
           </CardHeader>
         </Card>
-        <Card>
+        <Card className={summaryPulse ? "animate-pulse" : undefined}>
           <CardHeader>
             <CardDescription>Crypto</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.crypto ?? 0)}</CardTitle>
@@ -270,7 +290,7 @@ export function DashboardOverview() {
                 <CardDescription>Daily total net worth snapshots</CardDescription>
               </div>
               <div className="flex gap-1">
-                {(["7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
+                {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
                   <Button
                     key={option}
                     variant={range === option ? "default" : "outline"}

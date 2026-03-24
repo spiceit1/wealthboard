@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatUSD } from "@/lib/formatters";
+import { invalidateForManualHoldingChange } from "@/lib/query-invalidation";
 
 type Row = {
   id: string;
@@ -21,8 +22,12 @@ type Props = {
   rows: Row[];
 };
 
+type HoldingsQueryData = {
+  rows: Row[];
+};
+
 export function PositionsTable({ rows }: Props) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftQty, setDraftQty] = useState<string>("");
@@ -34,8 +39,14 @@ export function PositionsTable({ rows }: Props) {
     if (!row.isManual || (row.assetClass !== "stock" && row.assetClass !== "crypto")) return;
     setBusyId(row.id);
     setError(null);
+    const rollbackRows = (queryClient.getQueryData<HoldingsQueryData>(["holdings-overview"])?.rows ?? []).map(
+      (item) => ({ ...item }),
+    );
     try {
-      await fetch("/api/holdings/manual", {
+      queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], (current) => ({
+        rows: (current?.rows ?? []).filter((item) => item.id !== row.id),
+      }));
+      const response = await fetch("/api/holdings/manual", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -43,7 +54,14 @@ export function PositionsTable({ rows }: Props) {
           assetClass: row.assetClass,
         }),
       });
-      router.refresh();
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message ?? "Failed to remove holding.");
+      }
+      await invalidateForManualHoldingChange(queryClient);
+    } catch (error) {
+      queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], { rows: rollbackRows });
+      setError(error instanceof Error ? error.message : "Failed to remove holding.");
     } finally {
       setBusyId(null);
     }
@@ -66,8 +84,16 @@ export function PositionsTable({ rows }: Props) {
 
     setBusyId(row.id);
     setError(null);
+    const rollbackRows = (queryClient.getQueryData<HoldingsQueryData>(["holdings-overview"])?.rows ?? []).map(
+      (item) => ({ ...item }),
+    );
     try {
-      await fetch("/api/holdings/manual", {
+      queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], (current) => ({
+        rows: (current?.rows ?? []).map((item) =>
+          item.id === row.id ? { ...item, quantity: nextQty, marketValue: item.lastPrice * nextQty } : item,
+        ),
+      }));
+      const response = await fetch("/api/holdings/manual", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -76,8 +102,15 @@ export function PositionsTable({ rows }: Props) {
           quantity: nextQty,
         }),
       });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message ?? "Failed to save holding.");
+      }
       setEditingId(null);
-      router.refresh();
+      await invalidateForManualHoldingChange(queryClient);
+    } catch (error) {
+      queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], { rows: rollbackRows });
+      setError(error instanceof Error ? error.message : "Failed to save holding.");
     } finally {
       setBusyId(null);
     }

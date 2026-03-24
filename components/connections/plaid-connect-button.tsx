@@ -1,10 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 
 import { Button } from "@/components/ui/button";
+import { invalidateForPlaidConnectionChange } from "@/lib/query-invalidation";
 
 type LinkTokenResponse = {
   linkToken: string;
@@ -37,7 +38,7 @@ type PlaidExitError = {
 };
 
 export function PlaidConnectButton({ disabled = false }: Props) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -64,7 +65,7 @@ export function PlaidConnectButton({ disabled = false }: Props) {
 
       const payload = (await response.json()) as ExchangeResponse;
       if (payload.status === "connected") {
-        router.refresh();
+        await invalidateForPlaidConnectionChange(queryClient);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Plaid token exchange failed.");

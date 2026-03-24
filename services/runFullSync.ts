@@ -318,7 +318,12 @@ async function refreshManualHoldingValuations(userId: string) {
   return { stockSymbols, cryptoSymbols, updatedStockCount, updatedCryptoCount };
 }
 
-async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncSummary | null> {
+async function persistSnapshot(
+  userId: string,
+  syncRunId: string,
+  options?: { persistDailySnapshot?: boolean },
+): Promise<SyncSummary | null> {
+  const persistDailySnapshot = options?.persistDailySnapshot ?? true;
   const cashRows = await db.query.accounts.findMany({
     where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
   });
@@ -333,6 +338,9 @@ async function persistSnapshot(userId: string, syncRunId: string): Promise<SyncS
   const stocks = stockRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
   const crypto = cryptoRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
   const total = cash + stocks + crypto;
+  if (!persistDailySnapshot) {
+    return { cash, stocks, crypto, total };
+  }
 
   const dateKey = toDateKey(new Date());
   const previous = await db
@@ -443,7 +451,11 @@ async function runPriceRefreshSteps(
   }
 }
 
-async function executeFullSync(syncRunId: string, userId: string): Promise<SyncRunResult> {
+async function executeFullSync(
+  syncRunId: string,
+  userId: string,
+  trigger: SyncTrigger,
+): Promise<SyncRunResult> {
   const events: SyncEvent[] = [];
   let order = 1;
   let summary: SyncSummary | null = null;
@@ -499,8 +511,13 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
     await runPriceRefreshSteps(userId, pushEvent);
 
     await pushEvent("Calculating net worth");
-    summary = await persistSnapshot(userId, syncRunId);
-    await pushEvent("Saving snapshot");
+    const persistDailySnapshot = trigger === "scheduled";
+    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    if (persistDailySnapshot) {
+      await pushEvent("Saving snapshot");
+    } else {
+      await pushEvent("Skipping daily snapshot (only 9:00 AM scheduled snapshots are stored)");
+    }
 
     await db
       .update(syncRuns)
@@ -537,7 +554,11 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
   }
 }
 
-async function executePriceOnlySync(syncRunId: string, userId: string): Promise<SyncRunResult> {
+async function executePriceOnlySync(
+  syncRunId: string,
+  userId: string,
+  trigger: SyncTrigger,
+): Promise<SyncRunResult> {
   const events: SyncEvent[] = [];
   let order = 1;
   let summary: SyncSummary | null = null;
@@ -555,8 +576,13 @@ async function executePriceOnlySync(syncRunId: string, userId: string): Promise<
   try {
     await runPriceRefreshSteps(userId, pushEvent);
     await pushEvent("Calculating net worth");
-    summary = await persistSnapshot(userId, syncRunId);
-    await pushEvent("Saving snapshot");
+    const persistDailySnapshot = trigger === "scheduled";
+    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    if (persistDailySnapshot) {
+      await pushEvent("Saving snapshot");
+    } else {
+      await pushEvent("Skipping daily snapshot (only 9:00 AM scheduled snapshots are stored)");
+    }
 
     await db
       .update(syncRuns)
@@ -660,7 +686,7 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
 export async function runFullSync(userId: string, trigger: SyncTrigger = "manual") {
   const run = await createSyncRun(userId, trigger);
   if (run.started) {
-    const promise = executeFullSync(run.runId, userId).then(() => undefined);
+    const promise = executeFullSync(run.runId, userId, trigger).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
     await promise.finally(() => inFlightRuns.delete(run.runId));
   }
@@ -670,7 +696,7 @@ export async function runFullSync(userId: string, trigger: SyncTrigger = "manual
 export async function triggerSyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
   const run = await createSyncRun(userId, trigger);
   if (run.started) {
-    const promise = executeFullSync(run.runId, userId).then(() => undefined);
+    const promise = executeFullSync(run.runId, userId, trigger).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
     void promise.finally(() => inFlightRuns.delete(run.runId));
   }
@@ -680,7 +706,7 @@ export async function triggerSyncInBackground(userId: string, trigger: SyncTrigg
 export async function triggerPriceOnlySyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
   const run = await createSyncRun(userId, trigger);
   if (run.started) {
-    const promise = executePriceOnlySync(run.runId, userId).then(() => undefined);
+    const promise = executePriceOnlySync(run.runId, userId, trigger).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
     void promise.finally(() => inFlightRuns.delete(run.runId));
   }

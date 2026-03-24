@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { invalidateForManualHoldingChange } from "@/lib/query-invalidation";
 
 type Row = {
   id: string;
@@ -17,8 +18,24 @@ type Props = {
   rows: Row[];
 };
 
+type HoldingQueryRow = {
+  id: string;
+  symbol: string;
+  name: string;
+  assetClass: "cash" | "stock" | "crypto";
+  quantity: number;
+  lastPrice: number;
+  marketValue: number;
+  isManual: boolean;
+  updatedAt: string | null;
+};
+
+type HoldingsQueryData = {
+  rows: HoldingQueryRow[];
+};
+
 export function ManualHoldingEditor({ rows }: Props) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [symbol, setSymbol] = useState("");
   const [quantity, setQuantity] = useState("");
   const [assetClass, setAssetClass] = useState<"stock" | "crypto">("stock");
@@ -28,13 +45,54 @@ export function ManualHoldingEditor({ rows }: Props) {
   const addOrUpdate = async () => {
     setBusy(true);
     setError(null);
+    let rollbackRows: HoldingQueryRow[] | null = null;
     try {
       const q = Number(quantity);
+      const normalizedSymbol = symbol.trim().toUpperCase();
+      rollbackRows = (queryClient.getQueryData<HoldingsQueryData>(["holdings-overview"])?.rows ?? []).map(
+        (row) => ({ ...row }),
+      );
+      queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], (current) => {
+        const currentRows = current?.rows ?? [];
+        const existing = currentRows.find(
+          (row) => row.assetClass === assetClass && row.symbol.toUpperCase() === normalizedSymbol,
+        );
+        if (existing) {
+          return {
+            rows: currentRows.map((row) =>
+              row.id === existing.id
+                ? {
+                    ...row,
+                    quantity: q,
+                    marketValue: row.lastPrice * q,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : row,
+            ),
+          };
+        }
+        return {
+          rows: [
+            ...currentRows,
+            {
+              id: `optimistic-${assetClass}-${normalizedSymbol}`,
+              symbol: normalizedSymbol,
+              name: normalizedSymbol,
+              assetClass,
+              quantity: q,
+              lastPrice: 0,
+              marketValue: 0,
+              isManual: true,
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        };
+      });
       const response = await fetch("/api/holdings/manual", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          symbol,
+          symbol: normalizedSymbol,
           quantity: q,
           assetClass,
         }),
@@ -45,8 +103,11 @@ export function ManualHoldingEditor({ rows }: Props) {
       }
       setSymbol("");
       setQuantity("");
-      router.refresh();
+      await invalidateForManualHoldingChange(queryClient);
     } catch (err) {
+      if (rollbackRows) {
+        queryClient.setQueryData<HoldingsQueryData>(["holdings-overview"], { rows: rollbackRows });
+      }
       setError(err instanceof Error ? err.message : "Failed to save holding.");
     } finally {
       setBusy(false);

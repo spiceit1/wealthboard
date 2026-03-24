@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { invalidateForSyncFinish, invalidateForSyncStart } from "@/lib/query-invalidation";
 
 type SyncStartResponse = {
   runId: string;
@@ -17,7 +18,7 @@ type SyncProgressResponse = {
 };
 
 export function HoldingsSyncButton() {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [runId, setRunId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export function HoldingsSyncButton() {
           if (!cancelled) {
             setBusy(false);
             setRunId(null);
-            router.refresh();
+            await invalidateForSyncFinish(queryClient, "system");
           }
         }
       } catch {
@@ -51,7 +52,7 @@ export function HoldingsSyncButton() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [runId, router]);
+  }, [queryClient, runId]);
 
   const startSync = async () => {
     setBusy(true);
@@ -64,6 +65,7 @@ export function HoldingsSyncButton() {
     }
     const data = (await response.json()) as SyncStartResponse;
     setRunId(data.runId);
+    await invalidateForSyncStart(queryClient);
   };
 
   return (
