@@ -38,6 +38,7 @@ type SyncTrigger = "manual" | "scheduled" | "system";
 type SyncStatus = "pending" | "running" | "completed" | "failed";
 
 const inFlightRuns = new Map<string, Promise<void>>();
+const RUN_STALE_AFTER_MS = 20 * 60 * 1000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -626,9 +627,36 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
   });
 
   if (running) {
+    const ageMs = Date.now() - running.startedAt.getTime();
+    if (ageMs > RUN_STALE_AFTER_MS) {
+      await db
+        .update(syncRuns)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          errorMessage: `Auto-failed stale run after ${Math.round(ageMs / 60000)} minutes without completion.`,
+        })
+        .where(eq(syncRuns.id, running.id));
+    } else {
+      return {
+        runId: running.id,
+        status: running.status as SyncStatus,
+        started: false,
+        skipped: true,
+        skipReason: "A sync run is already in progress.",
+      };
+    }
+  }
+
+  const runningAfterCleanup = await db.query.syncRuns.findFirst({
+    where: and(eq(syncRuns.userId, userId), eq(syncRuns.status, "running")),
+    orderBy: (table, { desc: descFn }) => [descFn(table.startedAt)],
+  });
+
+  if (runningAfterCleanup) {
     return {
-      runId: running.id,
-      status: running.status as SyncStatus,
+      runId: runningAfterCleanup.id,
+      status: runningAfterCleanup.status as SyncStatus,
       started: false,
       skipped: true,
       skipReason: "A sync run is already in progress.",
@@ -711,6 +739,16 @@ export async function triggerPriceOnlySyncInBackground(userId: string, trigger: 
     void promise.finally(() => inFlightRuns.delete(run.runId));
   }
   return run;
+}
+
+export async function runPriceOnlySync(userId: string, trigger: SyncTrigger = "manual") {
+  const run = await createSyncRun(userId, trigger);
+  if (run.started) {
+    const promise = executePriceOnlySync(run.runId, userId, trigger).then(() => undefined);
+    inFlightRuns.set(run.runId, promise);
+    await promise.finally(() => inFlightRuns.delete(run.runId));
+  }
+  return getSyncRunProgress(run.runId);
 }
 
 export async function getSyncRunProgress(runId: string): Promise<SyncRunResult> {

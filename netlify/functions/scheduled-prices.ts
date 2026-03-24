@@ -1,5 +1,5 @@
 import { getDemoUserId } from "../../services/dashboardData";
-import { triggerPriceOnlySyncInBackground } from "../../services/runFullSync";
+import { runPriceOnlySync } from "../../services/runFullSync";
 
 export const config = {
   /**
@@ -63,8 +63,8 @@ export default async (request: Request) => {
       return json({ message: "Demo user not found." }, 404);
     }
 
-    // Use trigger=system so this can run many times/day without daily-scheduled dedupe.
-    const run = await triggerPriceOnlySyncInBackground(userId, "system");
+    // Run synchronously in scheduled functions; background promises are not reliable in serverless.
+    const run = await runPriceOnlySync(userId, "system");
     return json({
       ...run,
       scheduled: true,
