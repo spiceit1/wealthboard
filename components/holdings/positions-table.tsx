@@ -118,21 +118,31 @@ export function PositionsTable({ rows }: Props) {
 
   const renderTable = (title: string, tableRows: Row[]) => (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium">{title}</h3>
+      <h3 className="wb-section-title">{title}</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-muted-foreground">
-              <th className="py-2 pr-4">Symbol</th>
-              <th className="py-2 pr-4">Quantity</th>
-              <th className="py-2 pr-4">Price</th>
-              <th className="py-2 pr-4">Value</th>
-              <th className="py-2 pr-4">Actions</th>
+            <tr className="border-b text-left">
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Symbol
+              </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Quantity
+              </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Price
+              </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Value
+              </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             {tableRows.map((row) => (
-              <tr key={row.id} className="border-b">
+              <tr key={row.id} className="wb-table-row">
                 <td className="py-2 pr-4">{row.symbol}</td>
                 <td className="py-2 pr-4">
                   {editingId === row.id ? (
@@ -156,6 +166,7 @@ export function PositionsTable({ rows }: Props) {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="transition-colors"
                             onClick={() => saveEdit(row)}
                             disabled={busyId === row.id}
                           >
@@ -164,6 +175,7 @@ export function PositionsTable({ rows }: Props) {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="transition-colors"
                             onClick={() => {
                               setEditingId(null);
                               setError(null);
@@ -178,6 +190,7 @@ export function PositionsTable({ rows }: Props) {
                           <Button
                             variant="outline"
                             size="icon-sm"
+                            className="transition-colors"
                             onClick={() => startEdit(row)}
                             disabled={busyId === row.id}
                             aria-label={`Edit ${row.symbol}`}
@@ -187,6 +200,7 @@ export function PositionsTable({ rows }: Props) {
                           <Button
                             variant="outline"
                             size="icon-sm"
+                            className="transition-colors"
                             onClick={() => removeHolding(row)}
                             disabled={busyId === row.id}
                             aria-label={`Remove ${row.symbol}`}
@@ -203,7 +217,7 @@ export function PositionsTable({ rows }: Props) {
               </tr>
             ))}
             {!tableRows.length && (
-              <tr>
+              <tr className="wb-table-row">
                 <td className="py-3 text-muted-foreground" colSpan={6}>
                   No {title.toLowerCase()} found.
                 </td>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, RefreshCw } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -21,7 +21,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDateTimeEastern, formatTimeEastern } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RelativeTime } from "@/components/shared/relative-time";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -115,6 +117,13 @@ async function fetchSyncProgress(runId: string): Promise<SyncResponse> {
   return response.json();
 }
 
+const CHART_COLORS = {
+  cash: "#3b82f6",
+  stocks: "#10b981",
+  crypto: "#a855f7",
+  line: "#2563eb",
+};
+
 export function DashboardOverview() {
   const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("1D");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -179,9 +188,9 @@ export function DashboardOverview() {
     const summary = dashboardQuery.data?.summary;
     if (!summary) return [];
     return [
-      { name: "Cash", value: summary.cash, color: "#3b82f6" },
-      { name: "Stocks", value: summary.stocks, color: "#10b981" },
-      { name: "Crypto", value: summary.crypto, color: "#a855f7" },
+      { name: "Cash", value: summary.cash, color: CHART_COLORS.cash },
+      { name: "Stocks", value: summary.stocks, color: CHART_COLORS.stocks },
+      { name: "Crypto", value: summary.crypto, color: CHART_COLORS.crypto },
     ];
   }, [dashboardQuery.data?.summary]);
 
@@ -198,107 +207,151 @@ export function DashboardOverview() {
     syncProgressQuery.data?.status === "pending";
   const runningProviderMessage = activeEvents[activeEvents.length - 1]?.message ?? "Idle";
 
-  const isLoading = dashboardQuery.isPending;
-  const hasError = dashboardQuery.isError;
+  const dailyChange = dashboardQuery.data?.summary?.dailyChange ?? 0;
+  const changeIsPositive = dailyChange >= 0;
 
-  if (isLoading) {
+  if (dashboardQuery.isPending) {
     return (
-      <section className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">WealthBoard Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Loading seeded financial snapshots...</p>
+      <section className="space-y-6 wb-fade-in">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="wb-card-hover">
+              <CardHeader>
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-7 w-36" />
+                <Skeleton className="h-3 w-32" />
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-5">
+          <Card className="lg:col-span-3"><CardContent className="pt-6"><Skeleton className="h-[300px] w-full" /></CardContent></Card>
+          <Card className="lg:col-span-2"><CardContent className="pt-6"><Skeleton className="h-[300px] w-full" /></CardContent></Card>
+        </div>
       </section>
     );
   }
 
-  if (hasError) {
+  if (dashboardQuery.isError) {
     return (
-      <section className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">WealthBoard Dashboard</h1>
-        <p className="text-sm text-red-500">
-          Unable to load dashboard data. Run `npm run db:push` and `npm run db:seed`, then
-          refresh.
-        </p>
+      <section className="space-y-4">
+        <h1 className="wb-page-title">Dashboard</h1>
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="pt-6">
+            <p className="text-sm text-destructive">
+              Unable to load dashboard data. Run <code className="rounded bg-muted px-1 py-0.5 text-xs">npm run db:push</code> and{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">npm run db:seed</code>, then refresh.
+            </p>
+          </CardContent>
+        </Card>
       </section>
     );
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">WealthBoard Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Database-backed snapshots with chart-ready history.
-          </p>
+    <section className="space-y-6 wb-fade-in">
+      {/* Hero */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-3xl font-bold tracking-tight tabular-nums">
+              {formatUSD(activeSummary?.total ?? 0)}
+            </h1>
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold",
+                changeIsPositive
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-red-50 text-red-700",
+              )}
+            >
+              {changeIsPositive ? (
+                <ArrowUpRight className="h-3 w-3" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3" />
+              )}
+              {changeIsPositive ? "+" : ""}
+              {formatUSD(dailyChange)}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">Total net worth</p>
           {activeSummary?.asOf && (
             <p className="text-xs text-muted-foreground">
-              As of {formatDateTimeEastern(activeSummary.asOf)} (<RelativeTime value={activeSummary.asOf} />)
+              Updated {formatDateTimeEastern(activeSummary.asOf)} (<RelativeTime value={activeSummary.asOf} />)
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={dashboardQuery.data?.mockMode ? "secondary" : "outline"}>
-            {dashboardQuery.data?.mockMode ? "Mock Mode" : "Live Mode"}
+            {dashboardQuery.data?.mockMode ? "Mock" : "Live"}
           </Badge>
-          <Button onClick={() => syncMutation.mutate()} disabled={isSyncing}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {isSyncing ? "Syncing..." : "Get My Latest Info"}
+          <Button onClick={() => syncMutation.mutate()} disabled={isSyncing} size="sm">
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isSyncing && "animate-spin")} />
+            {isSyncing ? "Syncing..." : "Sync Now"}
           </Button>
         </div>
       </div>
+
       {isSyncing && (
-        <p className="text-sm text-muted-foreground">Current step: {runningProviderMessage}</p>
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-primary">
+          <span className="font-medium">Syncing:</span> {runningProviderMessage}
+        </div>
       )}
 
+      {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className={summaryPulse ? "animate-pulse" : undefined}>
-          <CardHeader>
-            <CardDescription>Total Net Worth</CardDescription>
-            <CardTitle>{formatUSD(activeSummary?.total ?? 0)}</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(activeSummary?.asOf)}</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card className={summaryPulse ? "animate-pulse" : undefined}>
-          <CardHeader>
-            <CardDescription>Cash</CardDescription>
-            <CardTitle>{formatUSD(activeSummary?.cash ?? 0)}</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(activeSummary?.cashAsOf)}</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card className={summaryPulse ? "animate-pulse" : undefined}>
-          <CardHeader>
-            <CardDescription>Stocks</CardDescription>
-            <CardTitle>{formatUSD(activeSummary?.stocks ?? 0)}</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(activeSummary?.stocksAsOf)}</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card className={summaryPulse ? "animate-pulse" : undefined}>
-          <CardHeader>
-            <CardDescription>Crypto</CardDescription>
-            <CardTitle>{formatUSD(activeSummary?.crypto ?? 0)}</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(activeSummary?.cryptoAsOf)}</CardDescription>
-          </CardHeader>
-        </Card>
+        {[
+          { label: "Total Net Worth", value: activeSummary?.total ?? 0, asOf: activeSummary?.asOf },
+          { label: "Cash", value: activeSummary?.cash ?? 0, asOf: activeSummary?.cashAsOf },
+          { label: "Stocks", value: activeSummary?.stocks ?? 0, asOf: activeSummary?.stocksAsOf },
+          { label: "Crypto", value: activeSummary?.crypto ?? 0, asOf: activeSummary?.cryptoAsOf },
+        ].map((kpi) => (
+          <Card
+            key={kpi.label}
+            className={cn("wb-card-hover", summaryPulse && "wb-pulse-highlight")}
+          >
+            <CardHeader>
+              <CardDescription className="text-xs font-medium uppercase tracking-wider">
+                {kpi.label}
+              </CardDescription>
+              <CardTitle className="text-xl tabular-nums">{formatUSD(kpi.value)}</CardTitle>
+              {kpi.asOf && (
+                <p className="text-[11px] text-muted-foreground">
+                  <RelativeTime value={kpi.asOf} />
+                </p>
+              )}
+            </CardHeader>
+          </Card>
+        ))}
       </div>
 
+      {/* Charts */}
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
+        <Card className="lg:col-span-3 wb-card-hover">
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <CardTitle>Net Worth Trend</CardTitle>
-                <CardDescription>Daily total net worth snapshots</CardDescription>
+                <CardTitle className="wb-section-title">Net Worth Trend</CardTitle>
+                <CardDescription>Daily snapshots</CardDescription>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
                 {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
-                  <Button
+                  <button
                     key={option}
-                    variant={range === option ? "default" : "outline"}
-                    size="sm"
                     onClick={() => setRange(option)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      range === option
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
                   >
                     {option}
-                  </Button>
+                  </button>
                 ))}
               </div>
             </div>
@@ -311,11 +364,16 @@ export function DashboardOverview() {
                 <Tooltip
                   formatter={(value) => tooltipCurrency(value)}
                   labelFormatter={(label) => `Date: ${label}`}
+                  contentStyle={{
+                    borderRadius: "8px",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                  }}
                 />
                 <Line
                   type="monotone"
                   dataKey="total"
-                  stroke="#2563eb"
+                  stroke={CHART_COLORS.line}
                   strokeWidth={2}
                   dot={false}
                 />
@@ -324,35 +382,53 @@ export function DashboardOverview() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 wb-card-hover">
           <CardHeader>
-            <CardTitle>Asset Allocation</CardTitle>
-            <CardDescription>Cash vs stocks vs crypto</CardDescription>
+            <CardTitle className="wb-section-title">Asset Allocation</CardTitle>
+            <CardDescription>Distribution by asset class</CardDescription>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Tooltip formatter={(value) => tooltipCurrency(value)} />
+                <Tooltip
+                  formatter={(value) => tooltipCurrency(value)}
+                  contentStyle={{
+                    borderRadius: "8px",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                  }}
+                />
                 <Pie
                   data={allocationData}
                   dataKey="value"
                   nameKey="name"
                   innerRadius={60}
                   outerRadius={95}
+                  strokeWidth={2}
+                  stroke="var(--background)"
                 >
                   {allocationData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
+                <Legend
+                  verticalAlign="bottom"
+                  iconType="circle"
+                  iconSize={8}
+                  formatter={(value) => (
+                    <span className="text-xs text-muted-foreground">{value}</span>
+                  )}
+                />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      {/* Category Trends */}
+      <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Category Trends</CardTitle>
+          <CardTitle className="wb-section-title">Category Trends</CardTitle>
           <CardDescription>Cash, stocks, and crypto over time</CardDescription>
         </CardHeader>
         <CardContent className="h-[320px]">
@@ -363,53 +439,69 @@ export function DashboardOverview() {
               <Tooltip
                 formatter={(value) => tooltipCurrency(value)}
                 labelFormatter={(label) => `Date: ${label}`}
+                contentStyle={{
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  fontSize: "12px",
+                }}
               />
-              <Legend />
+              <Legend iconType="circle" iconSize={8} />
               <Area
                 type="monotone"
                 dataKey="cash"
                 name="Cash"
-                stroke="#3b82f6"
-                fill="#3b82f6"
-                fillOpacity={0.2}
+                stroke={CHART_COLORS.cash}
+                fill={CHART_COLORS.cash}
+                fillOpacity={0.15}
+                strokeWidth={1.5}
               />
               <Area
                 type="monotone"
                 dataKey="stocks"
                 name="Stocks"
-                stroke="#10b981"
-                fill="#10b981"
-                fillOpacity={0.16}
+                stroke={CHART_COLORS.stocks}
+                fill={CHART_COLORS.stocks}
+                fillOpacity={0.12}
+                strokeWidth={1.5}
               />
               <Area
                 type="monotone"
                 dataKey="crypto"
                 name="Crypto"
-                stroke="#a855f7"
-                fill="#a855f7"
-                fillOpacity={0.12}
+                stroke={CHART_COLORS.crypto}
+                fill={CHART_COLORS.crypto}
+                fillOpacity={0.1}
+                strokeWidth={1.5}
               />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Sync Activity */}
+      <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Latest Sync Activity</CardTitle>
-          <CardDescription>Most recent provider event sequence.</CardDescription>
+          <CardTitle className="wb-section-title">Latest Sync Activity</CardTitle>
+          <CardDescription>Most recent provider event sequence</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2 text-sm">
-            {activeEvents.map((event) => (
-              <li key={`${event.timestamp}-${event.message}`} className="text-muted-foreground">
-                [{formatTimeEastern(event.timestamp)}] {event.message}
-              </li>
-            ))}
-            {!activeEvents.length && (
-              <li className="text-muted-foreground">Run sync to view activity logs.</li>
-            )}
-          </ul>
+          {activeEvents.length ? (
+            <div className="space-y-1.5">
+              {activeEvents.map((event) => (
+                <div
+                  key={`${event.timestamp}-${event.message}`}
+                  className="flex items-start gap-2 text-sm"
+                >
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    {formatTimeEastern(event.timestamp)}
+                  </span>
+                  <span className="text-foreground/80">{event.message}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Run a sync to view activity logs.</p>
+          )}
         </CardContent>
       </Card>
     </section>

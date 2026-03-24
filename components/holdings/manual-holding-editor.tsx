@@ -114,18 +114,21 @@ export function ManualHoldingEditor({ rows }: Props) {
     }
   };
 
+  const fieldClass =
+    "rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
+
   return (
-    <div className="space-y-3 rounded-md border p-3">
-      <p className="text-sm font-medium">Manual stock/crypto quantities</p>
+    <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
+      <p className="wb-section-title">Manual stock/crypto quantities</p>
       <div className="grid gap-2 md:grid-cols-4">
         <input
-          className="rounded-md border px-2 py-1 text-sm"
+          className={fieldClass}
           placeholder="Symbol (e.g. AAPL)"
           value={symbol}
           onChange={(e) => setSymbol(e.target.value.toUpperCase())}
         />
         <select
-          className="rounded-md border px-2 py-1 text-sm"
+          className={fieldClass}
           value={assetClass}
           onChange={(e) => setAssetClass(e.target.value as "stock" | "crypto")}
         >
@@ -133,7 +136,7 @@ export function ManualHoldingEditor({ rows }: Props) {
           <option value="crypto">Crypto</option>
         </select>
         <input
-          className="rounded-md border px-2 py-1 text-sm"
+          className={fieldClass}
           placeholder="Quantity"
           inputMode="decimal"
           value={quantity}

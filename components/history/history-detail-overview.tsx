@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatUSD } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 
 type SnapshotItem = {
   id: string;
@@ -46,26 +47,26 @@ export function HistoryDetailOverview({ date }: Props) {
 
   if (detailQuery.isPending) {
     return (
-      <>
-        <Card>
-          <CardHeader>
-            <CardTitle>Cash Accounts</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Brokerage Positions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
-          </CardContent>
-        </Card>
-      </>
+      <section className="space-y-6 wb-fade-in">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-72" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        {(["Cash Accounts", "Brokerage Positions", "Crypto Holdings"] as const).map((label) => (
+          <Card key={label} className="wb-card-hover">
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-5 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-9 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
     );
   }
 
@@ -90,63 +91,94 @@ export function HistoryDetailOverview({ date }: Props) {
   const brokerage = detail.items.filter((item) => item.category === "brokerage_position");
   const crypto = detail.items.filter((item) => item.category === "crypto_holding");
 
+  const rowDivider = "border-b border-border/60 pb-3 last:border-0 last:pb-0";
+
   return (
-    <>
-      <section className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Snapshot Detail: {date}</h1>
+    <section className="space-y-6 wb-fade-in">
+      <div className="space-y-2">
+        <h1 className="wb-page-title">Snapshot Detail: {date}</h1>
         <p className="text-sm text-muted-foreground">
-          Net worth: {formatUSD(Number(detail.snapshot.totalNetWorth))}
+          Net worth:{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {formatUSD(Number(detail.snapshot.totalNetWorth))}
+          </span>
         </p>
-      </section>
+      </div>
 
-      <Card>
+      <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Cash Accounts</CardTitle>
+          <CardTitle className="wb-section-title">Cash Accounts</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           {cashAccounts.map((item) => (
-            <div key={item.id} className="flex items-center justify-between border-b pb-2">
+            <div key={item.id} className={cn("flex items-center justify-between gap-4", rowDivider)}>
               <span>{item.label}</span>
-              <span>{formatUSD(Number(item.value))}</span>
+              <span className="shrink-0 tabular-nums font-medium">{formatUSD(Number(item.value))}</span>
             </div>
           ))}
-          {!cashAccounts.length && <p className="text-muted-foreground">No cash accounts.</p>}
+          {!cashAccounts.length && (
+            <p className="text-sm text-muted-foreground">No cash accounts.</p>
+          )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Brokerage Positions</CardTitle>
+          <CardTitle className="wb-section-title">Brokerage Positions</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           {brokerage.map((item) => (
-            <div key={item.id} className="grid grid-cols-4 gap-2 border-b pb-2">
-              <span>{item.symbol}</span>
-              <span>Qty: {Number(item.quantity ?? 0).toFixed(4)}</span>
-              <span>Price: {formatUSD(Number(item.price ?? 0))}</span>
-              <span>Value: {formatUSD(Number(item.value))}</span>
+            <div
+              key={item.id}
+              className={cn("grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4", rowDivider)}
+            >
+              <span className="font-medium text-foreground sm:col-span-1">{item.symbol}</span>
+              <span className="text-muted-foreground">
+                Qty: <span className="tabular-nums text-foreground">{Number(item.quantity ?? 0).toFixed(4)}</span>
+              </span>
+              <span className="text-muted-foreground">
+                Price:{" "}
+                <span className="tabular-nums text-foreground">{formatUSD(Number(item.price ?? 0))}</span>
+              </span>
+              <span className="text-muted-foreground sm:text-right">
+                Value:{" "}
+                <span className="tabular-nums font-medium text-foreground">
+                  {formatUSD(Number(item.value))}
+                </span>
+              </span>
             </div>
           ))}
-          {!brokerage.length && <p className="text-muted-foreground">No brokerage positions.</p>}
+          {!brokerage.length && (
+            <p className="text-sm text-muted-foreground">No brokerage positions.</p>
+          )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Crypto Holdings</CardTitle>
+          <CardTitle className="wb-section-title">Crypto Holdings</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           {crypto.map((item) => (
-            <div key={item.id} className="grid grid-cols-3 gap-2 border-b pb-2">
-              <span>{item.symbol}</span>
-              <span>Qty: {Number(item.quantity ?? 0).toFixed(6)}</span>
-              <span>Value: {formatUSD(Number(item.value))}</span>
+            <div key={item.id} className={cn("grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-3", rowDivider)}>
+              <span className="font-medium text-foreground">{item.symbol}</span>
+              <span className="text-muted-foreground">
+                Qty: <span className="tabular-nums text-foreground">{Number(item.quantity ?? 0).toFixed(6)}</span>
+              </span>
+              <span className="text-muted-foreground sm:text-right">
+                Value:{" "}
+                <span className="tabular-nums font-medium text-foreground">
+                  {formatUSD(Number(item.value))}
+                </span>
+              </span>
             </div>
           ))}
-          {!crypto.length && <p className="text-muted-foreground">No crypto holdings.</p>}
+          {!crypto.length && (
+            <p className="text-sm text-muted-foreground">No crypto holdings.</p>
+          )}
         </CardContent>
       </Card>
-    </>
+    </section>
   );
 }
 

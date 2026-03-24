@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 type LiveStatusDetail = {
   state: "connecting" | "healthy" | "degraded";
@@ -33,18 +32,30 @@ export function LiveUpdatesBadge() {
     return () => window.removeEventListener("wealthboard:live-status", onStatus);
   }, []);
 
-  if (status.state === "healthy") {
-    return <Badge variant="secondary">Live updates on ({status.via.toUpperCase()})</Badge>;
-  }
-
-  if (status.state === "connecting") {
-    return <Badge variant="outline">Connecting live updates...</Badge>;
-  }
-
   return (
-    <Badge variant="destructive">
-      Live updates degraded - retrying in {formatRetry(status.retryInMs)}
-    </Badge>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+        status.state === "healthy" &&
+          "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+        status.state === "connecting" &&
+          "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+        status.state === "degraded" &&
+          "bg-red-50 text-red-700 ring-1 ring-red-200",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 rounded-full",
+          status.state === "healthy" && "bg-emerald-500",
+          status.state === "connecting" && "animate-pulse bg-amber-500",
+          status.state === "degraded" && "bg-red-500",
+        )}
+      />
+      {status.state === "healthy" && "Live"}
+      {status.state === "connecting" && "Connecting..."}
+      {status.state === "degraded" &&
+        `Reconnecting${status.retryInMs ? ` in ${formatRetry(status.retryInMs)}` : "..."}`}
+    </span>
   );
 }
-

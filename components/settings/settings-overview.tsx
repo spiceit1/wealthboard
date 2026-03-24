@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTimeEastern } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 
 type SettingsData = {
   latestScheduled: {
@@ -37,29 +38,35 @@ export function SettingsOverview() {
 
   if (settingsQuery.isPending) {
     return (
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Scheduler</CardTitle>
-            <CardDescription>Daily auto-refresh target: 9:00 AM America/New_York.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Environment</CardTitle>
-            <CardDescription>Server-side runtime flags and protections.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-4 w-1/2" />
-          </CardContent>
-        </Card>
+      <div className="wb-fade-in space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-4 w-full max-w-md" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className={cn("wb-card-hover")}>
+            <CardHeader>
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-4 w-full max-w-sm" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardContent>
+          </Card>
+          <Card className={cn("wb-card-hover")}>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-full max-w-xs" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-4 w-3/5" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -71,16 +78,16 @@ export function SettingsOverview() {
   const { data, mockMode, internalTokenSet } = settingsQuery.data;
 
   return (
-    <>
+    <div className="wb-fade-in space-y-6">
       <section className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="wb-page-title">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Scheduler health, security controls, and runtime mode.
         </p>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className={cn("wb-card-hover")}>
           <CardHeader>
             <CardTitle>Scheduler</CardTitle>
             <CardDescription>Daily auto-refresh target: 9:00 AM America/New_York.</CardDescription>
@@ -101,7 +108,7 @@ export function SettingsOverview() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn("wb-card-hover")}>
           <CardHeader>
             <CardTitle>Environment</CardTitle>
             <CardDescription>Server-side runtime flags and protections.</CardDescription>
@@ -120,7 +127,7 @@ export function SettingsOverview() {
           </CardContent>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 

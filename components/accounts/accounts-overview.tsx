@@ -48,22 +48,33 @@ export function AccountsOverview() {
   if (accountsQuery.isPending) {
     return (
       <>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Bank Cash Total</CardTitle>
+        <div className="grid gap-4 sm:grid-cols-1">
+          <Card className="wb-card-hover">
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-4 w-36" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-44" />
+            </CardContent>
+          </Card>
+        </div>
+        <Card className="wb-card-hover">
+          <CardHeader className="space-y-2">
+            <Skeleton className="h-5 w-52" />
           </CardHeader>
           <CardContent>
-            <Skeleton className="h-8 w-40" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Bank Account Balances</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
+            <div className="space-y-3">
+              <div className="flex gap-4 border-b pb-2">
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-full" />
+              ))}
+            </div>
           </CardContent>
         </Card>
       </>
@@ -77,15 +88,15 @@ export function AccountsOverview() {
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-1">
-        <Card>
+        <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Bank Cash Total</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{formatUSD(cashTotal)}</CardContent>
+          <CardContent className="text-xl font-semibold tabular-nums">{formatUSD(cashTotal)}</CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card className="wb-card-hover">
         <CardHeader>
           <CardTitle>Bank Account Balances</CardTitle>
         </CardHeader>
@@ -103,16 +114,16 @@ export function AccountsOverview() {
               </thead>
               <tbody>
                 {bankRows.map((row) => (
-                  <tr key={row.id} className="border-b">
+                  <tr key={row.id} className="wb-table-row">
                     <td className="py-2 pr-4">{row.institutionName}</td>
                     <td className="py-2 pr-4">{row.name}</td>
                     <td className="py-2 pr-4 capitalize">{row.type.replace("_", " ")}</td>
-                    <td className="py-2 pr-4">{formatUSD(row.balance)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.balance)}</td>
                     <td className="py-2 pr-4">{formatDateTimeEastern(row.balanceAsOf)}</td>
                   </tr>
                 ))}
                 {!bankRows.length && (
-                  <tr>
+                  <tr className="wb-table-row">
                     <td className="py-3 text-muted-foreground" colSpan={5}>
                       No bank accounts found.
                     </td>

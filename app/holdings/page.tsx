@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default function HoldingsPage() {
   return (
-    <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+    <main className="space-y-6">
       <AppNav />
       <HoldingsOverview />
     </main>

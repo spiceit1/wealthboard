@@ -60,25 +60,29 @@ export function HoldingsOverview() {
 
   if (holdingsQuery.isPending) {
     return (
-      <>
+      <div className="wb-fade-in space-y-6">
         <section className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Holdings</h1>
+          <h1 className="wb-page-title">Holdings</h1>
           <p className="text-sm text-muted-foreground">
             Manual stock and crypto quantities with sync-driven price refresh.
           </p>
           <HoldingsSyncButton />
         </section>
-        <div className="space-y-3 rounded-md border p-3">
-          <Skeleton className="h-5 w-56" />
-          <div className="grid gap-2 md:grid-cols-4">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        </div>
+        <Card className="wb-card-hover">
+          <CardHeader>
+            <Skeleton className="h-6 w-64" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          </CardContent>
+        </Card>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
+          <Card className="wb-card-hover">
             <CardHeader>
               <CardTitle className="text-base">Stocks Total</CardTitle>
             </CardHeader>
@@ -86,7 +90,7 @@ export function HoldingsOverview() {
               <Skeleton className="h-8 w-36" />
             </CardContent>
           </Card>
-          <Card>
+          <Card className="wb-card-hover">
             <CardHeader>
               <CardTitle className="text-base">Crypto Total</CardTitle>
             </CardHeader>
@@ -95,18 +99,32 @@ export function HoldingsOverview() {
             </CardContent>
           </Card>
         </div>
-      </>
+        <Card className="wb-card-hover">
+          <CardHeader>
+            <Skeleton className="h-5 w-28" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-4/5" />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   if (holdingsQuery.isError) {
-    return <p className="text-sm text-red-500">Unable to load holdings right now.</p>;
+    return (
+      <div className="wb-fade-in">
+        <p className="text-sm text-red-500">Unable to load holdings right now.</p>
+      </div>
+    );
   }
 
   return (
-    <>
+    <div className="wb-fade-in space-y-6">
       <section className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Holdings</h1>
+        <h1 className="wb-page-title">Holdings</h1>
         <p className="text-sm text-muted-foreground">
           Manual stock and crypto quantities with sync-driven price refresh.
         </p>
@@ -116,23 +134,23 @@ export function HoldingsOverview() {
       <ManualHoldingEditor rows={rows} />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Stocks Total</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(stocksAsOf)}</CardDescription>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{formatUSD(stockTotal)}</CardContent>
+          <CardContent className="text-xl tabular-nums">{formatUSD(stockTotal)}</CardContent>
         </Card>
-        <Card>
+        <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Crypto Total</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(cryptoAsOf)}</CardDescription>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{formatUSD(cryptoTotal)}</CardContent>
+          <CardContent className="text-xl tabular-nums">{formatUSD(cryptoTotal)}</CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card className="wb-card-hover">
         <CardHeader>
           <CardTitle>Positions</CardTitle>
         </CardHeader>
@@ -140,7 +158,6 @@ export function HoldingsOverview() {
           <PositionsTable rows={rows} />
         </CardContent>
       </Card>
-    </>
+    </div>
   );
 }
-

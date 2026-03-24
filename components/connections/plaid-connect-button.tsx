@@ -131,10 +131,10 @@ export function PlaidConnectButton({ disabled = false }: Props) {
 
   return (
     <div className="space-y-2">
-      <Button onClick={beginLinkFlow} disabled={disabled || loading}>
+      <Button size="sm" onClick={beginLinkFlow} disabled={disabled || loading}>
         {buttonLabel}
       </Button>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

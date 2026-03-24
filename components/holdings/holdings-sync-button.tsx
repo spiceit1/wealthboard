@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { invalidateForSyncFinish, invalidateForSyncStart } from "@/lib/query-invalidation";
+import { cn } from "@/lib/utils";
 
 type SyncStartResponse = {
   runId: string;
@@ -71,7 +72,7 @@ export function HoldingsSyncButton() {
   return (
     <div className="space-y-1">
       <Button onClick={startSync} disabled={busy}>
-        <RefreshCw className="mr-2 h-4 w-4" />
+        <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", busy && "animate-spin")} />
         {busy ? "Syncing..." : "Sync Prices Now"}
       </Button>
       {step && <p className="text-xs text-muted-foreground">{step}</p>}

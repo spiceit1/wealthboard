@@ -11,7 +11,7 @@ export default async function HistoryDetailPage({ params }: Props) {
   const { date } = await params;
 
   return (
-    <main className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+    <main className="space-y-6">
       <AppNav />
       <HistoryDetailOverview date={date} />
     </main>
