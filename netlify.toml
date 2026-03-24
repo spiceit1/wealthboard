@@ -9,6 +9,9 @@ node_bundler = "esbuild"
 [functions."scheduled-sync"]
 schedule = "0 13,14 * * *"
 
+[functions."scheduled-prices"]
+schedule = "*/15 * * * 1-5"
+
 [[plugins]]
 package = "@netlify/plugin-nextjs"
 

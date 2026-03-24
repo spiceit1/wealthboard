@@ -11,8 +11,10 @@ import { getConnectionsOverview, getDemoUserId } from "@/services/dashboardData"
 
 const providerSecurityNotes: Record<string, string> = {
   plaid: "Uses Plaid Link with read-only access. Credentials are never stored.",
-  snaptrade: "Stock prices are refreshed from Stooq during manual and scheduled sync. Quantities are entered manually in Holdings.",
-  coingecko: "Crypto prices are refreshed from CoinGecko during manual and scheduled sync. Quantities are entered manually in Holdings.",
+  snaptrade:
+    "Stock prices are refreshed from Stooq during manual sync, every 15 minutes on weekdays during market hours (09:30-16:00 ET), and the daily 9:00 AM America/New_York scheduled sync. Quantities are entered manually in Holdings.",
+  coingecko:
+    "Crypto prices are refreshed from CoinGecko during manual sync, every 15 minutes on weekdays during market hours (09:30-16:00 ET), and the daily 9:00 AM America/New_York scheduled sync. Quantities are entered manually in Holdings.",
 };
 
 const providerSyncMethod: Record<string, string> = {

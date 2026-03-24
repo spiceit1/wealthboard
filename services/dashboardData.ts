@@ -16,6 +16,15 @@ function toNumber(value: string) {
   return Number(value);
 }
 
+function latestIso(values: Array<Date | null | undefined>) {
+  const filtered = values
+    .filter((value): value is Date => value instanceof Date)
+    .map((value) => value.getTime())
+    .filter((value) => Number.isFinite(value));
+  if (!filtered.length) return null;
+  return new Date(Math.max(...filtered)).toISOString();
+}
+
 export async function getDemoUserId() {
   try {
     const user = await db.query.users.findFirst({
@@ -29,6 +38,18 @@ export async function getDemoUserId() {
 
 export async function getDashboardData(userId: string) {
   try {
+    const [cashAccounts, stockHoldings, cryptoHoldings] = await Promise.all([
+      db.query.accounts.findMany({
+        where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+      }),
+      db.query.holdings.findMany({
+        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
+      }),
+      db.query.holdings.findMany({
+        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+      }),
+    ]);
+
     const snapshots = await db
       .select({
         id: dailySnapshots.id,
@@ -47,6 +68,15 @@ export async function getDashboardData(userId: string) {
 
     const latestSnapshot = snapshots[0] ?? null;
     const sortedHistory = [...snapshots].reverse();
+    const cashAsOf = latestIso(cashAccounts.map((row) => row.balanceAsOf));
+    const stocksAsOf = latestIso(stockHoldings.map((row) => row.updatedAt));
+    const cryptoAsOf = latestIso(cryptoHoldings.map((row) => row.updatedAt));
+    const summaryAsOf = latestIso([
+      cashAsOf ? new Date(cashAsOf) : null,
+      stocksAsOf ? new Date(stocksAsOf) : null,
+      cryptoAsOf ? new Date(cryptoAsOf) : null,
+      latestSnapshot?.createdAt ?? null,
+    ]);
 
     const latestRun = await db
       .select({
@@ -81,6 +111,10 @@ export async function getDashboardData(userId: string) {
             crypto: toNumber(latestSnapshot.crypto),
             total: toNumber(latestSnapshot.total),
             dailyChange: toNumber(latestSnapshot.dailyChange),
+            asOf: summaryAsOf,
+            cashAsOf,
+            stocksAsOf,
+            cryptoAsOf,
           }
         : null,
       history: sortedHistory.map((row) => ({
@@ -249,6 +283,7 @@ export async function getHoldingsOverview(userId: string) {
         lastPrice: holdings.lastPrice,
         marketValue: holdings.marketValue,
         isManual: holdings.isManual,
+        updatedAt: holdings.updatedAt,
       })
       .from(holdings)
       .where(eq(holdings.userId, userId))

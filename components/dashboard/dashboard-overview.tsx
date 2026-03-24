@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import { useEffect, useMemo, useState } from "react";
 
-import { formatTimeEastern } from "@/lib/formatters";
+import { formatDateTimeEastern, formatTimeEastern } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +38,10 @@ type SyncResponse = {
     stocks: number;
     crypto: number;
     total: number;
+    asOf?: string | null;
+    cashAsOf?: string | null;
+    stocksAsOf?: string | null;
+    cryptoAsOf?: string | null;
   } | null;
 };
 
@@ -55,6 +59,10 @@ type DashboardResponse = {
     crypto: number;
     total: number;
     dailyChange: number;
+    asOf: string | null;
+    cashAsOf: string | null;
+    stocksAsOf: string | null;
+    cryptoAsOf: string | null;
   } | null;
   history: Array<{
     id: string;
@@ -202,6 +210,11 @@ export function DashboardOverview() {
           <p className="text-sm text-muted-foreground">
             Database-backed snapshots with chart-ready history.
           </p>
+          {activeSummary?.asOf && (
+            <p className="text-xs text-muted-foreground">
+              As of {formatDateTimeEastern(activeSummary.asOf)}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={dashboardQuery.data?.mockMode ? "secondary" : "outline"}>
@@ -222,24 +235,28 @@ export function DashboardOverview() {
           <CardHeader>
             <CardDescription>Total Net Worth</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.total ?? 0)}</CardTitle>
+            <CardDescription>As of {formatDateTimeEastern(activeSummary?.asOf)}</CardDescription>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Cash</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.cash ?? 0)}</CardTitle>
+            <CardDescription>As of {formatDateTimeEastern(activeSummary?.cashAsOf)}</CardDescription>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Stocks</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.stocks ?? 0)}</CardTitle>
+            <CardDescription>As of {formatDateTimeEastern(activeSummary?.stocksAsOf)}</CardDescription>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Crypto</CardDescription>
             <CardTitle>{formatUSD(activeSummary?.crypto ?? 0)}</CardTitle>
+            <CardDescription>As of {formatDateTimeEastern(activeSummary?.cryptoAsOf)}</CardDescription>
           </CardHeader>
         </Card>
       </div>

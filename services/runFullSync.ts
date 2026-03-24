@@ -183,6 +183,25 @@ async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
   }
 }
 
+async function markPlaidConnectionsSynced(userId: string, plaidItemIds: string[]) {
+  const uniqueIds = [...new Set(plaidItemIds.filter(Boolean))];
+  if (!uniqueIds.length) return;
+  await db
+    .update(connections)
+    .set({
+      lastSyncedAt: new Date(),
+      updatedAt: new Date(),
+      status: "active",
+    })
+    .where(
+      and(
+        eq(connections.userId, userId),
+        eq(connections.provider, "plaid"),
+        inArray(connections.externalId, uniqueIds),
+      ),
+    );
+}
+
 async function removeAutoStockHoldings(userId: string) {
   await db
     .delete(holdings)
@@ -449,6 +468,10 @@ async function executeFullSync(syncRunId: string, userId: string): Promise<SyncR
       await removeLegacyMockInstitutionAccounts(userId);
       const activePlaidIds = new Set(plaid.data.map((a) => a.providerAccountId));
       await upsertCashAccounts(userId, plaid.data);
+      await markPlaidConnectionsSynced(
+        userId,
+        plaid.data.map((a) => a.plaidItemId ?? "").filter(Boolean),
+      );
       if (adapterModes.plaid === "real") {
         const plaidConnections = await db.query.connections.findMany({
           where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
