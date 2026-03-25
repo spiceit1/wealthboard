@@ -37,6 +37,7 @@ async function seed() {
   await db.execute(sql`
     TRUNCATE TABLE
       snapshot_items,
+      intraday_snapshots,
       daily_snapshots,
       sync_run_events,
       sync_runs,

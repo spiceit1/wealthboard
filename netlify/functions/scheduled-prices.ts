@@ -34,9 +34,8 @@ function getNyParts(now = new Date()) {
 }
 
 function isMarketWindowNy(hour: number, minute: number) {
-  // 09:30 through 16:00 America/New_York
+  // 09:00 through 16:00 America/New_York
   if (hour < 9 || hour > 16) return false;
-  if (hour === 9 && minute < 30) return false;
   if (hour === 16 && minute > 0) return false;
   return true;
 }
@@ -51,7 +50,7 @@ export default async (request: Request) => {
     if (!force && (!isWeekday || !inWindow)) {
       return json({
         skipped: true,
-        reason: "Outside weekday market window (09:30-16:00 America/New_York).",
+        reason: "Outside weekday market window (09:00-16:00 America/New_York).",
         nyWeekday: weekday,
         nyHour: hour,
         nyMinute: minute,

@@ -76,6 +76,15 @@ type DashboardResponse = {
     total: number;
     dailyChange: number;
   }>;
+  intradayHistory: Array<{
+    id: string;
+    date: string;
+    cash: number;
+    stocks: number;
+    crypto: number;
+    total: number;
+    dailyChange: number;
+  }>;
   latestSync: {
     id: string;
     status: string;
@@ -177,12 +186,15 @@ export function DashboardOverview() {
   }, [activeSummary?.asOf]);
 
   const filteredHistory = useMemo(() => {
-    const rows = dashboardQuery.data?.history ?? [];
+    const dailyRows = dashboardQuery.data?.history ?? [];
+    const intradayRows = dashboardQuery.data?.intradayHistory ?? [];
+    if (range === "1D" && intradayRows.length > 0) return intradayRows;
+    const rows = dailyRows;
     if (range === "All") return rows;
     const limit =
       range === "1D" ? 1 : range === "7D" ? 7 : range === "30D" ? 30 : range === "90D" ? 90 : 365;
     return rows.slice(Math.max(0, rows.length - limit));
-  }, [dashboardQuery.data?.history, range]);
+  }, [dashboardQuery.data?.history, dashboardQuery.data?.intradayHistory, range]);
 
   const allocationData = useMemo(() => {
     const summary = dashboardQuery.data?.summary;
@@ -206,6 +218,8 @@ export function DashboardOverview() {
     syncProgressQuery.data?.status === "running" ||
     syncProgressQuery.data?.status === "pending";
   const runningProviderMessage = activeEvents[activeEvents.length - 1]?.message ?? "Idle";
+  const hasSinglePointTrend = filteredHistory.length <= 1;
+  const usingIntradayRange = range === "1D" && (dashboardQuery.data?.intradayHistory?.length ?? 0) > 0;
 
   const dailyChange = dashboardQuery.data?.summary?.dailyChange ?? 0;
   const changeIsPositive = dailyChange >= 0;
@@ -336,7 +350,9 @@ export function DashboardOverview() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle className="wb-section-title">Net Worth Trend</CardTitle>
-                <CardDescription>Daily snapshots</CardDescription>
+                <CardDescription>
+                  {usingIntradayRange ? "15-minute intraday snapshots" : "Daily snapshots"}
+                </CardDescription>
               </div>
               <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
                 {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
@@ -376,10 +392,22 @@ export function DashboardOverview() {
                   dataKey="total"
                   stroke={CHART_COLORS.line}
                   strokeWidth={2}
-                  dot={false}
+                  dot={
+                    hasSinglePointTrend
+                      ? { r: 4, strokeWidth: 2, fill: "#fff" }
+                      : false
+                  }
+                  activeDot={{ r: 5 }}
                 />
               </LineChart>
             </ResponsiveContainer>
+            {hasSinglePointTrend && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {usingIntradayRange
+                  ? "Single intraday snapshot available for this range."
+                  : "Single daily snapshot available for this range."}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -455,6 +483,7 @@ export function DashboardOverview() {
                 fill={CHART_COLORS.cash}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
+                dot={hasSinglePointTrend ? { r: 3 } : false}
               />
               <Area
                 type="monotone"
@@ -464,6 +493,7 @@ export function DashboardOverview() {
                 fill={CHART_COLORS.stocks}
                 fillOpacity={0.12}
                 strokeWidth={1.5}
+                dot={hasSinglePointTrend ? { r: 3 } : false}
               />
               <Area
                 type="monotone"
@@ -473,9 +503,17 @@ export function DashboardOverview() {
                 fill={CHART_COLORS.crypto}
                 fillOpacity={0.1}
                 strokeWidth={1.5}
+                dot={hasSinglePointTrend ? { r: 3 } : false}
               />
             </AreaChart>
           </ResponsiveContainer>
+          {hasSinglePointTrend && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {usingIntradayRange
+                ? "Add more intraday snapshots to view a trend line."
+                : "Add more daily snapshots to view a trend line."}
+            </p>
+          )}
         </CardContent>
       </Card>
 

@@ -243,6 +243,25 @@ export const dailySnapshots = pgTable(
   }),
 );
 
+export const intradaySnapshots = pgTable(
+  "intraday_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+    cashTotal: numeric("cash_total", { precision: 18, scale: 2 }).notNull().default("0"),
+    stocksTotal: numeric("stocks_total", { precision: 18, scale: 2 }).notNull().default("0"),
+    cryptoTotal: numeric("crypto_total", { precision: 18, scale: 2 }).notNull().default("0"),
+    totalNetWorth: numeric("total_net_worth", { precision: 18, scale: 2 }).notNull().default("0"),
+    syncRunId: uuid("sync_run_id").references(() => syncRuns.id, { onDelete: "set null" }),
+  },
+  (table) => ({
+    userCapturedIdx: index("intraday_snapshots_user_captured_idx").on(table.userId, table.capturedAt),
+  }),
+);
+
 export const snapshotItems = pgTable(
   "snapshot_items",
   {
@@ -283,6 +302,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
   snapshots: many(dailySnapshots),
+  intradaySnapshots: many(intradaySnapshots),
   syncRuns: many(syncRuns),
 }));
 

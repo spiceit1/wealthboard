@@ -6,6 +6,7 @@ import {
   connections,
   dailySnapshots,
   holdings,
+  intradaySnapshots,
   prices,
   snapshotItems,
   syncRunEvents,
@@ -431,6 +432,18 @@ async function persistSnapshot(
   return { cash, stocks, crypto, total };
 }
 
+async function persistIntradaySnapshot(userId: string, syncRunId: string, summary: SyncSummary) {
+  await db.insert(intradaySnapshots).values({
+    userId,
+    syncRunId,
+    cashTotal: toMoney(summary.cash),
+    stocksTotal: toMoney(summary.stocks),
+    cryptoTotal: toMoney(summary.crypto),
+    totalNetWorth: toMoney(summary.total),
+    capturedAt: new Date(),
+  });
+}
+
 async function runPriceRefreshSteps(
   userId: string,
   pushEvent: (message: string, provider?: "plaid" | "snaptrade" | "coingecko") => Promise<void>,
@@ -514,6 +527,9 @@ async function executeFullSync(
     await pushEvent("Calculating net worth");
     const persistDailySnapshot = trigger === "scheduled";
     summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    if (summary && (trigger === "scheduled" || trigger === "system")) {
+      await persistIntradaySnapshot(userId, syncRunId, summary);
+    }
     if (persistDailySnapshot) {
       await pushEvent("Saving snapshot");
     } else {
@@ -579,6 +595,9 @@ async function executePriceOnlySync(
     await pushEvent("Calculating net worth");
     const persistDailySnapshot = trigger === "scheduled";
     summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    if (summary && (trigger === "scheduled" || trigger === "system")) {
+      await persistIntradaySnapshot(userId, syncRunId, summary);
+    }
     if (persistDailySnapshot) {
       await pushEvent("Saving snapshot");
     } else {

@@ -6,6 +6,7 @@ import {
   connections,
   dailySnapshots,
   holdings,
+  intradaySnapshots,
   snapshotItems,
   syncRunEvents,
   syncRuns,
@@ -23,6 +24,36 @@ function latestIso(values: Array<Date | null | undefined>) {
     .filter((value) => Number.isFinite(value));
   if (!filtered.length) return null;
   return new Date(Math.max(...filtered)).toISOString();
+}
+
+function getNyDateKey(value: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
+function getNyHourMinute(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(value);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
+  return { hour, minute };
+}
+
+function toNyTimeLabel(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(value);
 }
 
 export async function getDemoUserId() {
@@ -67,8 +98,45 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(dailySnapshots.snapshotDate))
       .limit(90);
 
+    const intradayRaw = await db
+      .select({
+        id: intradaySnapshots.id,
+        capturedAt: intradaySnapshots.capturedAt,
+        cash: intradaySnapshots.cashTotal,
+        stocks: intradaySnapshots.stocksTotal,
+        crypto: intradaySnapshots.cryptoTotal,
+        total: intradaySnapshots.totalNetWorth,
+      })
+      .from(intradaySnapshots)
+      .where(eq(intradaySnapshots.userId, userId))
+      .orderBy(desc(intradaySnapshots.capturedAt))
+      .limit(300);
+
     const latestSnapshot = snapshots[0] ?? null;
     const sortedHistory = [...snapshots].reverse();
+    const todayNy = getNyDateKey(new Date());
+    const intradayToday = [...intradayRaw]
+      .reverse()
+      .filter((row) => {
+        if (!row.capturedAt) return false;
+        const dateKey = getNyDateKey(row.capturedAt);
+        if (dateKey !== todayNy) return false;
+        const { hour } = getNyHourMinute(row.capturedAt);
+        return hour >= 9;
+      });
+    const intradayHistory = intradayToday.map((row, index) => {
+      const total = toNumber(row.total);
+      const previousTotal = index > 0 ? toNumber(intradayToday[index - 1].total) : total;
+      return {
+        id: row.id,
+        date: toNyTimeLabel(row.capturedAt),
+        cash: toNumber(row.cash),
+        stocks: toNumber(row.stocks),
+        crypto: toNumber(row.crypto),
+        total,
+        dailyChange: total - previousTotal,
+      };
+    });
     const cashAsOf = latestIso(cashAccounts.map((row) => row.balanceAsOf));
     const stocksAsOf = latestIso(stockHoldings.map((row) => row.updatedAt));
     const cryptoAsOf = latestIso(cryptoHoldings.map((row) => row.updatedAt));
@@ -127,6 +195,7 @@ export async function getDashboardData(userId: string) {
         total: toNumber(row.total),
         dailyChange: toNumber(row.dailyChange),
       })),
+      intradayHistory,
       latestSync: latestRun[0] ?? null,
       events: events.map((event) => ({
         message: event.message,
@@ -138,6 +207,7 @@ export async function getDashboardData(userId: string) {
     return {
       summary: null,
       history: [],
+      intradayHistory: [],
       latestSync: null,
       events: [],
     };
