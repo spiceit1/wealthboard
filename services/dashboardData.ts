@@ -112,6 +112,11 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(intradaySnapshots.capturedAt))
       .limit(300);
 
+    const liveCashTotal = cashAccounts.reduce((sum, row) => sum + Number(row.lastBalance), 0);
+    const liveStocksTotal = stockHoldings.reduce((sum, row) => sum + Number(row.marketValue), 0);
+    const liveCryptoTotal = cryptoHoldings.reduce((sum, row) => sum + Number(row.marketValue), 0);
+    const liveTotal = liveCashTotal + liveStocksTotal + liveCryptoTotal;
+
     const latestSnapshot = snapshots[0] ?? null;
     const sortedHistory = [...snapshots].reverse();
     const todayNy = getNyDateKey(new Date());
@@ -124,9 +129,46 @@ export async function getDashboardData(userId: string) {
         const { hour } = getNyHourMinute(row.capturedAt);
         return hour >= 9;
       });
-    const intradayHistory = intradayToday.map((row, index) => {
+    const cashAsOf = latestIso(cashAccounts.map((row) => row.balanceAsOf));
+    const stocksAsOf = latestIso(stockHoldings.map((row) => row.updatedAt));
+    const cryptoAsOf = latestIso(cryptoHoldings.map((row) => row.updatedAt));
+    const summaryAsOf = latestIso([
+      cashAsOf ? new Date(cashAsOf) : null,
+      stocksAsOf ? new Date(stocksAsOf) : null,
+      cryptoAsOf ? new Date(cryptoAsOf) : null,
+      latestSnapshot?.createdAt ?? null,
+    ]);
+
+    const shouldAppendLiveIntradayPoint =
+      summaryAsOf != null &&
+      (() => {
+        const asOfDate = new Date(summaryAsOf);
+        if (!Number.isFinite(asOfDate.getTime())) return false;
+        if (getNyDateKey(asOfDate) !== todayNy) return false;
+        const { hour } = getNyHourMinute(asOfDate);
+        if (hour < 9) return false;
+        const latestIntraday = intradayToday[intradayToday.length - 1];
+        if (!latestIntraday?.capturedAt) return true;
+        return asOfDate.getTime() - latestIntraday.capturedAt.getTime() > 60_000;
+      })();
+
+    const intradayRowsForChart = shouldAppendLiveIntradayPoint
+      ? [
+          ...intradayToday,
+          {
+            id: "live",
+            capturedAt: summaryAsOf ? new Date(summaryAsOf) : new Date(),
+            cash: liveCashTotal.toFixed(2),
+            stocks: liveStocksTotal.toFixed(2),
+            crypto: liveCryptoTotal.toFixed(2),
+            total: liveTotal.toFixed(2),
+          },
+        ]
+      : intradayToday;
+
+    const intradayHistory = intradayRowsForChart.map((row, index) => {
       const total = toNumber(row.total);
-      const previousTotal = index > 0 ? toNumber(intradayToday[index - 1].total) : total;
+      const previousTotal = index > 0 ? toNumber(intradayRowsForChart[index - 1].total) : total;
       return {
         id: row.id,
         date: toNyTimeLabel(row.capturedAt),
@@ -138,15 +180,8 @@ export async function getDashboardData(userId: string) {
         dailyChange: total - previousTotal,
       };
     });
-    const cashAsOf = latestIso(cashAccounts.map((row) => row.balanceAsOf));
-    const stocksAsOf = latestIso(stockHoldings.map((row) => row.updatedAt));
-    const cryptoAsOf = latestIso(cryptoHoldings.map((row) => row.updatedAt));
-    const summaryAsOf = latestIso([
-      cashAsOf ? new Date(cashAsOf) : null,
-      stocksAsOf ? new Date(stocksAsOf) : null,
-      cryptoAsOf ? new Date(cryptoAsOf) : null,
-      latestSnapshot?.createdAt ?? null,
-    ]);
+    const previousScheduledTotal = snapshots[1] ? toNumber(snapshots[1].total) : liveTotal;
+    const baselineForDailyChange = latestSnapshot ? previousScheduledTotal : liveTotal;
 
     const latestRun = await db
       .select({
@@ -193,11 +228,11 @@ export async function getDashboardData(userId: string) {
       summary: latestSnapshot
         ? {
             date: latestSnapshot.date,
-            cash: toNumber(latestSnapshot.cash),
-            stocks: toNumber(latestSnapshot.stocks),
-            crypto: toNumber(latestSnapshot.crypto),
-            total: toNumber(latestSnapshot.total),
-            dailyChange: toNumber(latestSnapshot.dailyChange),
+            cash: liveCashTotal,
+            stocks: liveStocksTotal,
+            crypto: liveCryptoTotal,
+            total: liveTotal,
+            dailyChange: liveTotal - baselineForDailyChange,
             asOf: summaryAsOf,
             cashAsOf,
             stocksAsOf,
