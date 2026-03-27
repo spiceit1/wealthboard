@@ -70,6 +70,7 @@ type DashboardResponse = {
   history: Array<{
     id: string;
     date: string;
+    capturedAt?: string | null;
     cash: number;
     stocks: number;
     crypto: number;
@@ -79,6 +80,7 @@ type DashboardResponse = {
   intradayHistory: Array<{
     id: string;
     date: string;
+    capturedAt?: string | null;
     cash: number;
     stocks: number;
     crypto: number;
@@ -142,6 +144,8 @@ export function DashboardOverview() {
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: fetchDashboard,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
   });
 
   const syncMutation = useMutation({
@@ -380,7 +384,15 @@ export function DashboardOverview() {
                 <YAxis hide domain={["auto", "auto"]} />
                 <Tooltip
                   formatter={(value) => tooltipCurrency(value)}
-                  labelFormatter={(label) => `Date: ${label}`}
+                  labelFormatter={(label, payload) => {
+                    const row = payload?.[0]?.payload as
+                      | { capturedAt?: string | null; date?: string }
+                      | undefined;
+                    if (row?.capturedAt) {
+                      return `Time: ${formatDateTimeEastern(row.capturedAt)}`;
+                    }
+                    return `Date: ${label}`;
+                  }}
                   contentStyle={{
                     borderRadius: "8px",
                     border: "1px solid var(--border)",

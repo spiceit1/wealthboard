@@ -130,6 +130,7 @@ export async function getDashboardData(userId: string) {
       return {
         id: row.id,
         date: toNyTimeLabel(row.capturedAt),
+        capturedAt: row.capturedAt?.toISOString() ?? null,
         cash: toNumber(row.cash),
         stocks: toNumber(row.stocks),
         crypto: toNumber(row.crypto),
