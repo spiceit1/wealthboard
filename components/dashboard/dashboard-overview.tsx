@@ -87,6 +87,7 @@ type DashboardResponse = {
     total: number;
     dailyChange: number;
   }>;
+  latestIntradaySyncAt: string | null;
   latestSync: {
     id: string;
     status: string;
@@ -108,6 +109,28 @@ function formatUSD(value: number) {
 function tooltipCurrency(value: unknown) {
   const numeric = typeof value === "number" ? value : Number(value ?? 0);
   return formatUSD(numeric);
+}
+
+function IntradayTooltipContent({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { capturedAt?: string | null; total: number; cash: number; stocks: number; crypto: number } }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-sm">
+      <p className="mb-1 text-muted-foreground">
+        {row.capturedAt ? formatDateTimeEastern(row.capturedAt) : "Intraday point"}
+      </p>
+      <p className="font-medium">Total: {formatUSD(row.total)}</p>
+      <p className="text-muted-foreground">Cash: {formatUSD(row.cash)}</p>
+      <p className="text-muted-foreground">Stocks: {formatUSD(row.stocks)}</p>
+      <p className="text-muted-foreground">Crypto: {formatUSD(row.crypto)}</p>
+    </div>
+  );
 }
 
 async function fetchDashboard(): Promise<DashboardResponse> {
@@ -137,6 +160,7 @@ const CHART_COLORS = {
 
 export function DashboardOverview() {
   const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("1D");
+  const [intradayMode, setIntradayMode] = useState<"total" | "breakdown">("total");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [summaryPulse, setSummaryPulse] = useState(false);
   const previousAsOfRef = useRef<string | null>(null);
@@ -224,6 +248,34 @@ export function DashboardOverview() {
   const runningProviderMessage = activeEvents[activeEvents.length - 1]?.message ?? "Idle";
   const hasSinglePointTrend = filteredHistory.length <= 1;
   const usingIntradayRange = range === "1D" && (dashboardQuery.data?.intradayHistory?.length ?? 0) > 0;
+  const intradayChartData = useMemo(
+    () =>
+      filteredHistory.map((row) => ({
+        ...row,
+        chartTs: row.capturedAt ? new Date(row.capturedAt).getTime() : Number.NaN,
+      })),
+    [filteredHistory],
+  );
+
+  const marketWindowState = (() => {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(now);
+    const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+    const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday);
+    const inWindow =
+      isWeekday &&
+      (hour > 9 || (hour === 9 && minute >= 0)) &&
+      (hour < 16 || (hour === 16 && minute === 0));
+    return { inWindow };
+  })();
 
   const dailyChange = dashboardQuery.data?.summary?.dailyChange ?? 0;
   const changeIsPositive = dailyChange >= 0;
@@ -358,60 +410,148 @@ export function DashboardOverview() {
                   {usingIntradayRange ? "15-minute intraday snapshots" : "Daily snapshots"}
                 </CardDescription>
               </div>
-              <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-                {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
-                  <button
-                    key={option}
-                    onClick={() => setRange(option)}
-                    aria-pressed={range === option}
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                      range === option
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {option}
-                  </button>
-                ))}
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+                  {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => setRange(option)}
+                      aria-pressed={range === option}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                        range === option
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                {usingIntradayRange && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+                      {(["total", "breakdown"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setIntradayMode(mode)}
+                          aria-pressed={intradayMode === mode}
+                          className={cn(
+                            "rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                            intradayMode === mode
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {mode === "total" ? "Net Worth" : "Cash/Stocks/Crypto"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Last 15m sync:{" "}
+                      {dashboardQuery.data?.latestIntradaySyncAt
+                        ? formatDateTimeEastern(dashboardQuery.data.latestIntradaySyncAt)
+                        : "none yet"}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </CardHeader>
+          {usingIntradayRange && !marketWindowState.inWindow && (
+            <CardContent className="pt-0">
+              <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                Market window closed (09:00-16:00 ET). New intraday points resume at next window.
+              </div>
+            </CardContent>
+          )}
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredHistory}>
-                <XAxis dataKey="date" hide />
-                <YAxis hide domain={["auto", "auto"]} />
-                <Tooltip
-                  formatter={(value) => tooltipCurrency(value)}
-                  labelFormatter={(label, payload) => {
-                    const row = payload?.[0]?.payload as
-                      | { capturedAt?: string | null; date?: string }
-                      | undefined;
-                    if (row?.capturedAt) {
-                      return `Time: ${formatDateTimeEastern(row.capturedAt)}`;
+              {usingIntradayRange ? (
+                <LineChart data={intradayChartData}>
+                  <XAxis
+                    dataKey="chartTs"
+                    type="number"
+                    domain={["dataMin", "dataMax"]}
+                    tickFormatter={(value) =>
+                      new Intl.DateTimeFormat("en-US", {
+                        timeZone: "America/New_York",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      }).format(new Date(Number(value)))
                     }
-                    return `Date: ${label}`;
-                  }}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid var(--border)",
-                    fontSize: "12px",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke={CHART_COLORS.line}
-                  strokeWidth={2}
-                  dot={
-                    hasSinglePointTrend
-                      ? { r: 4, strokeWidth: 2, fill: "#fff" }
-                      : false
-                  }
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    minTickGap={28}
+                  />
+                  <YAxis hide domain={["auto", "auto"]} />
+                  <Tooltip
+                    labelFormatter={(_label, payload) => {
+                      const row = payload?.[0]?.payload as
+                        | { capturedAt?: string | null; date?: string }
+                        | undefined;
+                      if (row?.capturedAt) {
+                        return `Time: ${formatDateTimeEastern(row.capturedAt)}`;
+                      }
+                      return "Time";
+                    }}
+                    formatter={(value) => tooltipCurrency(value)}
+                    content={intradayMode === "total" ? <IntradayTooltipContent /> : undefined}
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      fontSize: "12px",
+                    }}
+                  />
+                  {intradayMode === "total" ? (
+                    <Line
+                      type="monotone"
+                      dataKey="total"
+                      name="total"
+                      stroke={CHART_COLORS.line}
+                      strokeWidth={2}
+                      dot={hasSinglePointTrend ? { r: 4, strokeWidth: 2, fill: "#fff" } : false}
+                      activeDot={{ r: 5 }}
+                    />
+                  ) : (
+                    <>
+                      <Line type="monotone" dataKey="cash" name="cash" stroke={CHART_COLORS.cash} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="stocks" name="stocks" stroke={CHART_COLORS.stocks} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="crypto" name="crypto" stroke={CHART_COLORS.crypto} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                    </>
+                  )}
+                </LineChart>
+              ) : (
+                <LineChart data={filteredHistory}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide domain={["auto", "auto"]} />
+                  <Tooltip
+                    formatter={(value) => tooltipCurrency(value)}
+                    labelFormatter={(label, payload) => {
+                      const row = payload?.[0]?.payload as
+                        | { capturedAt?: string | null; date?: string }
+                        | undefined;
+                      if (row?.capturedAt) {
+                        return `Time: ${formatDateTimeEastern(row.capturedAt)}`;
+                      }
+                      return `Date: ${label}`;
+                    }}
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    stroke={CHART_COLORS.line}
+                    strokeWidth={2}
+                    dot={hasSinglePointTrend ? { r: 4, strokeWidth: 2, fill: "#fff" } : false}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              )}
             </ResponsiveContainer>
             {hasSinglePointTrend && (
               <p className="mt-2 text-xs text-muted-foreground">

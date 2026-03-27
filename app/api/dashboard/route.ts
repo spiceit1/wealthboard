@@ -12,6 +12,7 @@ export async function GET() {
         summary: null,
         history: [],
         intradayHistory: [],
+        latestIntradaySyncAt: null,
         latestSync: null,
         events: [],
         mockMode: env.MOCK_MODE,

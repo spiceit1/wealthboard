@@ -15,7 +15,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx db/seed.ts",
     "db:cleanup-duplicates": "tsx db/cleanup-duplicates.ts",
-    "db:remove-legacy-accounts": "tsx db/remove-legacy-accounts.ts"
+    "db:remove-legacy-accounts": "tsx db/remove-legacy-accounts.ts",
+    "db:backfill-intraday": "tsx db/backfill-intraday.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

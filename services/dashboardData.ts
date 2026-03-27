@@ -160,6 +160,23 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(syncRuns.startedAt))
       .limit(1);
 
+    const [latestIntradayRun] = await db
+      .select({
+        startedAt: syncRuns.startedAt,
+        completedAt: syncRuns.completedAt,
+        status: syncRuns.status,
+      })
+      .from(syncRuns)
+      .where(
+        and(
+          eq(syncRuns.userId, userId),
+          inArray(syncRuns.trigger, ["system", "scheduled"]),
+          eq(syncRuns.status, "completed"),
+        ),
+      )
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(1);
+
     const events = latestRun[0]
       ? await db
           .select({
@@ -197,6 +214,7 @@ export async function getDashboardData(userId: string) {
         dailyChange: toNumber(row.dailyChange),
       })),
       intradayHistory,
+      latestIntradaySyncAt: latestIntradayRun?.completedAt?.toISOString() ?? null,
       latestSync: latestRun[0] ?? null,
       events: events.map((event) => ({
         message: event.message,
@@ -209,6 +227,7 @@ export async function getDashboardData(userId: string) {
       summary: null,
       history: [],
       intradayHistory: [],
+      latestIntradaySyncAt: null,
       latestSync: null,
       events: [],
     };

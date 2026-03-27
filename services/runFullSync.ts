@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -40,6 +40,10 @@ type SyncStatus = "pending" | "running" | "completed" | "failed";
 
 const inFlightRuns = new Map<string, Promise<void>>();
 const RUN_STALE_AFTER_MS = 20 * 60 * 1000;
+const PLAID_FETCH_TIMEOUT_MS = 25_000;
+const COINGECKO_FETCH_TIMEOUT_MS = 20_000;
+const STOOQ_FETCH_TIMEOUT_MS = 6_000;
+const PROVIDER_RETRY_COUNT = 2;
 
 function nowIso() {
   return new Date().toISOString();
@@ -60,6 +64,39 @@ function getNyDateKey(value: Date) {
 
 function toMoney(value: number) {
   return value.toFixed(2);
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
+async function withRetry<T>(
+  task: () => Promise<T>,
+  attempts: number,
+  retryDelayMs: number,
+): Promise<T> {
+  let lastError: unknown = null;
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      if (index < attempts - 1) await sleep(retryDelayMs);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Provider call failed");
 }
 
 async function appendEvent(
@@ -215,9 +252,22 @@ async function fetchStockPriceStooq(symbol: string): Promise<number | null> {
   if (!normalized) return null;
   const candidates = [`${normalized}.us`, normalized];
   for (const ticker of candidates) {
-    const response = await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(ticker)}&i=d`, {
-      cache: "no-store",
-    });
+    const response = await withRetry(
+      async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), STOOQ_FETCH_TIMEOUT_MS);
+        try {
+          return await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(ticker)}&i=d`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      PROVIDER_RETRY_COUNT,
+      250,
+    );
     if (!response.ok) continue;
     const csv = (await response.text()).trim();
     const lines = csv.split(/\r?\n/).filter(Boolean);
@@ -262,7 +312,16 @@ async function refreshManualHoldingValuations(userId: string) {
 
   const stockPriceMap = await fetchStockPrices(stockSymbols);
   const adapters = getProviderAdapters();
-  const cryptoPriceResult = await adapters.coingecko.fetchPrices(cryptoSymbols);
+  const cryptoPriceResult = await withRetry(
+    () =>
+      withTimeout(
+        adapters.coingecko.fetchPrices(cryptoSymbols),
+        COINGECKO_FETCH_TIMEOUT_MS,
+        "CoinGecko request timed out.",
+      ),
+    PROVIDER_RETRY_COUNT,
+    400,
+  );
   const cryptoPriceMap = new Map(cryptoPriceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
 
   let updatedStockCount = 0;
@@ -444,6 +503,34 @@ async function persistIntradaySnapshot(userId: string, syncRunId: string, summar
   });
 }
 
+async function applyIntradayRetentionPolicy(userId: string) {
+  // Keep high-resolution points for 30 days, then keep one point per hour for older data.
+  await db.execute(sql`
+    WITH ranked AS (
+      SELECT
+        id,
+        row_number() OVER (
+          PARTITION BY user_id, date_trunc('hour', captured_at)
+          ORDER BY captured_at ASC
+        ) AS rn
+      FROM intraday_snapshots
+      WHERE user_id = ${userId}
+        AND captured_at < now() - interval '30 days'
+    )
+    DELETE FROM intraday_snapshots s
+    USING ranked r
+    WHERE s.id = r.id
+      AND r.rn > 1;
+  `);
+
+  // Hard cap for old rolled-up data.
+  await db.execute(sql`
+    DELETE FROM intraday_snapshots
+    WHERE user_id = ${userId}
+      AND captured_at < now() - interval '365 days';
+  `);
+}
+
 async function runPriceRefreshSteps(
   userId: string,
   pushEvent: (message: string, provider?: "plaid" | "snaptrade" | "coingecko") => Promise<void>,
@@ -490,7 +577,16 @@ async function executeFullSync(
   try {
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
-      const plaid = await adapters.plaid.fetchBalances(userId);
+      const plaid = await withRetry(
+        () =>
+          withTimeout(
+            adapters.plaid.fetchBalances(userId),
+            PLAID_FETCH_TIMEOUT_MS,
+            "Plaid balance fetch timed out.",
+          ),
+        PROVIDER_RETRY_COUNT,
+        600,
+      );
       await removeLegacyMockInstitutionAccounts(userId);
       const activePlaidIds = new Set(plaid.data.map((a) => a.providerAccountId));
       await upsertCashAccounts(userId, plaid.data);
@@ -529,6 +625,7 @@ async function executeFullSync(
     summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
     if (summary && (trigger === "scheduled" || trigger === "system")) {
       await persistIntradaySnapshot(userId, syncRunId, summary);
+      await applyIntradayRetentionPolicy(userId);
     }
     if (persistDailySnapshot) {
       await pushEvent("Saving snapshot");
@@ -597,6 +694,7 @@ async function executePriceOnlySync(
     summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
     if (summary && (trigger === "scheduled" || trigger === "system")) {
       await persistIntradaySnapshot(userId, syncRunId, summary);
+      await applyIntradayRetentionPolicy(userId);
     }
     if (persistDailySnapshot) {
       await pushEvent("Saving snapshot");
