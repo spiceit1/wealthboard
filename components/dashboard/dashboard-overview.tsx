@@ -62,6 +62,8 @@ type DashboardResponse = {
     crypto: number;
     total: number;
     dailyChange: number;
+    changeSinceLabel?: string;
+    changeSinceAt?: string | null;
     asOf: string | null;
     cashAsOf: string | null;
     stocksAsOf: string | null;
@@ -278,6 +280,7 @@ export function DashboardOverview() {
   })();
 
   const dailyChange = dashboardQuery.data?.summary?.dailyChange ?? 0;
+  const changeSinceLabel = dashboardQuery.data?.summary?.changeSinceLabel ?? "since latest snapshot";
   const changeIsPositive = dailyChange >= 0;
 
   if (dashboardQuery.isPending) {
@@ -349,6 +352,9 @@ export function DashboardOverview() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground">Total net worth</p>
+          <p className="text-xs text-muted-foreground capitalize">
+            {changeIsPositive ? "Up" : "Down"} {formatUSD(Math.abs(dailyChange))} {changeSinceLabel}
+          </p>
           {activeSummary?.asOf && (
             <p className="text-xs text-muted-foreground">
               Updated {formatDateTimeEastern(activeSummary.asOf)} (<RelativeTime value={activeSummary.asOf} />)

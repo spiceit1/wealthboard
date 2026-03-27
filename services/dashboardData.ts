@@ -180,8 +180,17 @@ export async function getDashboardData(userId: string) {
         dailyChange: total - previousTotal,
       };
     });
-    const previousScheduledTotal = snapshots[1] ? toNumber(snapshots[1].total) : liveTotal;
-    const baselineForDailyChange = latestSnapshot ? previousScheduledTotal : liveTotal;
+    const firstIntradayPoint = intradayRowsForChart[0];
+    const firstIntradayTotal = firstIntradayPoint ? toNumber(firstIntradayPoint.total) : null;
+    const previousScheduledTotal = snapshots[1] ? toNumber(snapshots[1].total) : null;
+    const baselineForDailyChange =
+      firstIntradayTotal ?? previousScheduledTotal ?? (latestSnapshot ? toNumber(latestSnapshot.total) : liveTotal);
+    const changeSinceLabel = firstIntradayPoint?.capturedAt
+      ? `since ${toNyTimeLabel(firstIntradayPoint.capturedAt)} ET`
+      : snapshots[1]
+        ? `since ${snapshots[1].date} snapshot`
+        : "since latest snapshot";
+    const changeSinceAt = firstIntradayPoint?.capturedAt?.toISOString() ?? null;
 
     const latestRun = await db
       .select({
@@ -233,6 +242,8 @@ export async function getDashboardData(userId: string) {
             crypto: liveCryptoTotal,
             total: liveTotal,
             dailyChange: liveTotal - baselineForDailyChange,
+            changeSinceLabel,
+            changeSinceAt,
             asOf: summaryAsOf,
             cashAsOf,
             stocksAsOf,
