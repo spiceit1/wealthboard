@@ -413,7 +413,9 @@ export function DashboardOverview() {
               <div>
                 <CardTitle className="wb-section-title">Net Worth Trend</CardTitle>
                 <CardDescription>
-                  {usingIntradayRange ? "15-minute intraday snapshots" : "Daily snapshots"}
+                  {usingIntradayRange
+                    ? "15-minute intraday snapshots"
+                    : "Daily snapshots (as of ~9:00 AM ET)"}
                 </CardDescription>
               </div>
               <div className="flex flex-col items-end gap-2">
