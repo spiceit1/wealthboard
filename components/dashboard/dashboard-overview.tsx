@@ -162,7 +162,7 @@ const CHART_COLORS = {
 
 export function DashboardOverview() {
   const [range, setRange] = useState<"1D" | "7D" | "30D" | "90D" | "1Y" | "All">("1D");
-  const [intradayMode, setIntradayMode] = useState<"total" | "breakdown">("total");
+  const [chartSeries, setChartSeries] = useState<"total" | "cash" | "stocks" | "crypto">("total");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [summaryPulse, setSummaryPulse] = useState(false);
   const previousAsOfRef = useRef<string | null>(null);
@@ -250,6 +250,14 @@ export function DashboardOverview() {
   const runningProviderMessage = activeEvents[activeEvents.length - 1]?.message ?? "Idle";
   const hasSinglePointTrend = filteredHistory.length <= 1;
   const usingIntradayRange = range === "1D" && (dashboardQuery.data?.intradayHistory?.length ?? 0) > 0;
+  const activeSeriesColor =
+    chartSeries === "total"
+      ? CHART_COLORS.line
+      : chartSeries === "cash"
+        ? CHART_COLORS.cash
+        : chartSeries === "stocks"
+          ? CHART_COLORS.stocks
+          : CHART_COLORS.crypto;
   const intradayChartData = useMemo(
     () =>
       filteredHistory.map((row) => ({
@@ -415,7 +423,7 @@ export function DashboardOverview() {
                 <CardDescription>
                   {usingIntradayRange
                     ? "15-minute intraday snapshots"
-                    : "Daily snapshots (as of ~9:00 AM ET)"}
+                    : "Daily snapshots from scheduled sync (runs daily at 9:00 AM America/New_York)"}
                 </CardDescription>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -436,33 +444,40 @@ export function DashboardOverview() {
                     </button>
                   ))}
                 </div>
-                {usingIntradayRange && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-                      {(["total", "breakdown"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() => setIntradayMode(mode)}
-                          aria-pressed={intradayMode === mode}
-                          className={cn(
-                            "rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                            intradayMode === mode
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {mode === "total" ? "Net Worth" : "Cash/Stocks/Crypto"}
-                        </button>
-                      ))}
-                    </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+                    {(
+                      [
+                        { id: "total", label: "Net Worth" },
+                        { id: "cash", label: "Cash" },
+                        { id: "stocks", label: "Stocks" },
+                        { id: "crypto", label: "Crypto" },
+                      ] as const
+                    ).map((series) => (
+                      <button
+                        key={series.id}
+                        onClick={() => setChartSeries(series.id)}
+                        aria-pressed={chartSeries === series.id}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                          chartSeries === series.id
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {series.label}
+                      </button>
+                    ))}
+                  </div>
+                  {usingIntradayRange && (
                     <p className="text-[11px] text-muted-foreground">
                       Last 15m sync:{" "}
                       {dashboardQuery.data?.latestIntradaySyncAt
                         ? formatDateTimeEastern(dashboardQuery.data.latestIntradaySyncAt)
                         : "none yet"}
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -504,30 +519,22 @@ export function DashboardOverview() {
                       return "Time";
                     }}
                     formatter={(value) => tooltipCurrency(value)}
-                    content={intradayMode === "total" ? <IntradayTooltipContent /> : undefined}
+                    content={<IntradayTooltipContent />}
                     contentStyle={{
                       borderRadius: "8px",
                       border: "1px solid var(--border)",
                       fontSize: "12px",
                     }}
                   />
-                  {intradayMode === "total" ? (
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      name="total"
-                      stroke={CHART_COLORS.line}
-                      strokeWidth={2}
-                      dot={hasSinglePointTrend ? { r: 4, strokeWidth: 2, fill: "#fff" } : false}
-                      activeDot={{ r: 5 }}
-                    />
-                  ) : (
-                    <>
-                      <Line type="monotone" dataKey="cash" name="cash" stroke={CHART_COLORS.cash} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="stocks" name="stocks" stroke={CHART_COLORS.stocks} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="crypto" name="crypto" stroke={CHART_COLORS.crypto} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                    </>
-                  )}
+                  <Line
+                    type="monotone"
+                    dataKey={chartSeries}
+                    name={chartSeries}
+                    stroke={activeSeriesColor}
+                    strokeWidth={2}
+                    dot={hasSinglePointTrend ? { r: 4, strokeWidth: 2, fill: "#fff" } : false}
+                    activeDot={{ r: 5 }}
+                  />
                 </LineChart>
               ) : (
                 <LineChart data={filteredHistory}>
@@ -552,8 +559,8 @@ export function DashboardOverview() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="total"
-                    stroke={CHART_COLORS.line}
+                    dataKey={chartSeries}
+                    stroke={activeSeriesColor}
                     strokeWidth={2}
                     dot={hasSinglePointTrend ? { r: 4, strokeWidth: 2, fill: "#fff" } : false}
                     activeDot={{ r: 5 }}

@@ -74,7 +74,9 @@ export function HistoryOverview() {
     <section className="space-y-6 wb-fade-in">
       <div className="space-y-2">
         <h1 className="wb-page-title">History</h1>
-        <p className="text-sm text-muted-foreground">Daily net worth snapshots from scheduled syncs.</p>
+        <p className="text-sm text-muted-foreground">
+          Daily net worth snapshots from scheduled syncs (runs daily at 9:00 AM America/New_York).
+        </p>
       </div>
 
       <Card className="wb-card-hover">
