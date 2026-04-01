@@ -28,6 +28,8 @@ export type SyncSummary = {
   total: number;
 };
 
+type SnapshotOverride = Partial<Pick<SyncSummary, "cash" | "stocks" | "crypto">>;
+
 export type SyncRunResult = {
   runId: string;
   status: "pending" | "running" | "completed" | "failed";
@@ -41,6 +43,7 @@ type SyncStatus = "pending" | "running" | "completed" | "failed";
 const inFlightRuns = new Map<string, Promise<void>>();
 const RUN_STALE_AFTER_MS = 20 * 60 * 1000;
 const PLAID_FETCH_TIMEOUT_MS = 25_000;
+const PLAID_FETCH_TIMEOUT_MS_SCHEDULED = 7_000;
 const COINGECKO_FETCH_TIMEOUT_MS = 20_000;
 const STOOQ_FETCH_TIMEOUT_MS = 6_000;
 const PROVIDER_RETRY_COUNT = 2;
@@ -60,6 +63,15 @@ function getNyDateKey(value: Date) {
     month: "2-digit",
     day: "2-digit",
   }).format(value);
+}
+
+function getNyHour(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(value);
+  return Number(parts.find((part) => part.type === "hour")?.value ?? "0");
 }
 
 function toMoney(value: number) {
@@ -382,7 +394,7 @@ async function refreshManualHoldingValuations(userId: string) {
 async function persistSnapshot(
   userId: string,
   syncRunId: string,
-  options?: { persistDailySnapshot?: boolean },
+  options?: { persistDailySnapshot?: boolean; snapshotOverride?: SnapshotOverride | null },
 ): Promise<SyncSummary | null> {
   const persistDailySnapshot = options?.persistDailySnapshot ?? true;
   const cashRows = await db.query.accounts.findMany({
@@ -395,9 +407,13 @@ async function persistSnapshot(
     where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
   });
 
-  const cash = cashRows.reduce((sum, row) => sum + Number(row.lastBalance), 0);
-  const stocks = stockRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
-  const crypto = cryptoRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
+  const liveCash = cashRows.reduce((sum, row) => sum + Number(row.lastBalance), 0);
+  const liveStocks = stockRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
+  const liveCrypto = cryptoRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
+  const liveTotal = liveCash + liveStocks + liveCrypto;
+  const cash = options?.snapshotOverride?.cash ?? liveCash;
+  const stocks = options?.snapshotOverride?.stocks ?? liveStocks;
+  const crypto = options?.snapshotOverride?.crypto ?? liveCrypto;
   const total = cash + stocks + crypto;
   if (!persistDailySnapshot) {
     return { cash, stocks, crypto, total };
@@ -491,6 +507,34 @@ async function persistSnapshot(
   return { cash, stocks, crypto, total };
 }
 
+async function getFirstIntradaySummaryForNyDay(userId: string): Promise<SnapshotOverride | null> {
+  const recent = await db
+    .select({
+      capturedAt: intradaySnapshots.capturedAt,
+      cash: intradaySnapshots.cashTotal,
+      stocks: intradaySnapshots.stocksTotal,
+      crypto: intradaySnapshots.cryptoTotal,
+      total: intradaySnapshots.totalNetWorth,
+    })
+    .from(intradaySnapshots)
+    .where(eq(intradaySnapshots.userId, userId))
+    .orderBy(asc(intradaySnapshots.capturedAt))
+    .limit(600);
+
+  const todayNy = getNyDateKey(new Date());
+  const first = recent.find((row) => {
+    if (!row.capturedAt) return false;
+    return getNyDateKey(row.capturedAt) === todayNy && getNyHour(row.capturedAt) >= 9;
+  });
+  if (!first) return null;
+
+  // Preserve morning market prices while still allowing newer bank cash to update later.
+  return {
+    stocks: Number(first.stocks),
+    crypto: Number(first.crypto),
+  };
+}
+
 async function persistIntradaySnapshot(userId: string, syncRunId: string, summary: SyncSummary) {
   await db.insert(intradaySnapshots).values({
     userId,
@@ -577,14 +621,17 @@ async function executeFullSync(
   try {
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
+      const plaidTimeoutMs =
+        trigger === "scheduled" ? PLAID_FETCH_TIMEOUT_MS_SCHEDULED : PLAID_FETCH_TIMEOUT_MS;
+      const plaidAttempts = trigger === "scheduled" ? 1 : PROVIDER_RETRY_COUNT;
       const plaid = await withRetry(
         () =>
           withTimeout(
             adapters.plaid.fetchBalances(userId),
-            PLAID_FETCH_TIMEOUT_MS,
+            plaidTimeoutMs,
             "Plaid balance fetch timed out.",
           ),
-        PROVIDER_RETRY_COUNT,
+        plaidAttempts,
         600,
       );
       await removeLegacyMockInstitutionAccounts(userId);
@@ -622,7 +669,13 @@ async function executeFullSync(
 
     await pushEvent("Calculating net worth");
     const persistDailySnapshot = trigger === "scheduled";
-    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    const snapshotOverride = persistDailySnapshot
+      ? await getFirstIntradaySummaryForNyDay(userId)
+      : null;
+    if (snapshotOverride) {
+      await pushEvent("Using first intraday point as 9:00 AM ET baseline for daily snapshot");
+    }
+    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot, snapshotOverride });
     if (summary && (trigger === "scheduled" || trigger === "system")) {
       await persistIntradaySnapshot(userId, syncRunId, summary);
       await applyIntradayRetentionPolicy(userId);
@@ -691,7 +744,13 @@ async function executePriceOnlySync(
     await runPriceRefreshSteps(userId, pushEvent);
     await pushEvent("Calculating net worth");
     const persistDailySnapshot = trigger === "scheduled";
-    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot });
+    const snapshotOverride = persistDailySnapshot
+      ? await getFirstIntradaySummaryForNyDay(userId)
+      : null;
+    if (snapshotOverride) {
+      await pushEvent("Using first intraday point as 9:00 AM ET baseline for daily snapshot");
+    }
+    summary = await persistSnapshot(userId, syncRunId, { persistDailySnapshot, snapshotOverride });
     if (summary && (trigger === "scheduled" || trigger === "system")) {
       await persistIntradaySnapshot(userId, syncRunId, summary);
       await applyIntradayRetentionPolicy(userId);
@@ -804,14 +863,42 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
     });
 
     if (alreadyRanToday) {
-      return {
-        runId: alreadyRanToday.id,
-        status: alreadyRanToday.status as SyncStatus,
-        started: false,
-        skipped: true,
-        skipReason: "Scheduled sync already ran for current America/New_York day.",
-      };
+      if (alreadyRanToday.status === "completed") {
+        const cashRows = await db.query.accounts.findMany({
+          where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+        });
+        const latestCashAsOf = cashRows
+          .map((row) => row.balanceAsOf)
+          .filter((value): value is Date => value instanceof Date)
+          .sort((a, b) => b.getTime() - a.getTime())[0];
+        const hasFreshCashForNyDay = latestCashAsOf
+          ? getNyDateKey(latestCashAsOf) === nyToday
+          : false;
+
+        // Recovery mode: allow another scheduled run later the same day if
+        // cash balances are still stale for today (e.g., Plaid failed at 9 AM).
+        if (!hasFreshCashForNyDay) {
+          // continue and create a new scheduled run
+        } else {
+          return {
+            runId: alreadyRanToday.id,
+            status: alreadyRanToday.status as SyncStatus,
+            started: false,
+            skipped: true,
+            skipReason: "Scheduled sync already ran for current America/New_York day.",
+          };
+        }
+      } else {
+        return {
+          runId: alreadyRanToday.id,
+          status: alreadyRanToday.status as SyncStatus,
+          started: false,
+          skipped: true,
+          skipReason: "Scheduled sync already ran for current America/New_York day.",
+        };
+      }
     }
+
   }
 
   const [created] = await db

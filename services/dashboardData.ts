@@ -182,9 +182,25 @@ export async function getDashboardData(userId: string) {
     });
     const firstIntradayPoint = intradayRowsForChart[0];
     const firstIntradayTotal = firstIntradayPoint ? toNumber(firstIntradayPoint.total) : null;
+    const firstIntradayCash = firstIntradayPoint ? toNumber(firstIntradayPoint.cash) : null;
+    const firstIntradayStocks = firstIntradayPoint ? toNumber(firstIntradayPoint.stocks) : null;
+    const firstIntradayCrypto = firstIntradayPoint ? toNumber(firstIntradayPoint.crypto) : null;
     const previousScheduledTotal = snapshots[1] ? toNumber(snapshots[1].total) : null;
+    const previousScheduledCash = snapshots[1] ? toNumber(snapshots[1].cash) : null;
+    const previousScheduledStocks = snapshots[1] ? toNumber(snapshots[1].stocks) : null;
+    const previousScheduledCrypto = snapshots[1] ? toNumber(snapshots[1].crypto) : null;
     const baselineForDailyChange =
       firstIntradayTotal ?? previousScheduledTotal ?? (latestSnapshot ? toNumber(latestSnapshot.total) : liveTotal);
+    const baselineCash =
+      firstIntradayCash ?? previousScheduledCash ?? (latestSnapshot ? toNumber(latestSnapshot.cash) : liveCashTotal);
+    const baselineStocks =
+      firstIntradayStocks ??
+      previousScheduledStocks ??
+      (latestSnapshot ? toNumber(latestSnapshot.stocks) : liveStocksTotal);
+    const baselineCrypto =
+      firstIntradayCrypto ??
+      previousScheduledCrypto ??
+      (latestSnapshot ? toNumber(latestSnapshot.crypto) : liveCryptoTotal);
     const changeSinceLabel = firstIntradayPoint?.capturedAt
       ? `since ${toNyTimeLabel(firstIntradayPoint.capturedAt)} ET`
       : snapshots[1]
@@ -242,6 +258,9 @@ export async function getDashboardData(userId: string) {
             crypto: liveCryptoTotal,
             total: liveTotal,
             dailyChange: liveTotal - baselineForDailyChange,
+            cashDailyChange: liveCashTotal - baselineCash,
+            stocksDailyChange: liveStocksTotal - baselineStocks,
+            cryptoDailyChange: liveCryptoTotal - baselineCrypto,
             changeSinceLabel,
             changeSinceAt,
             asOf: summaryAsOf,
@@ -442,14 +461,62 @@ export async function getHoldingsOverview(userId: string) {
       .where(eq(holdings.userId, userId))
       .orderBy(asc(holdings.assetClass), asc(holdings.symbol));
 
-    return rows.map((row) => ({
+    const normalizedRows = rows.map((row) => ({
       ...row,
       quantity: Number(row.quantity),
       lastPrice: Number(row.lastPrice),
       marketValue: Number(row.marketValue),
     }));
+
+    const currentStocksTotal = normalizedRows
+      .filter((row) => row.assetClass === "stock")
+      .reduce((sum, row) => sum + row.marketValue, 0);
+    const currentCryptoTotal = normalizedRows
+      .filter((row) => row.assetClass === "crypto")
+      .reduce((sum, row) => sum + row.marketValue, 0);
+
+    const intradayRaw = await db
+      .select({
+        capturedAt: intradaySnapshots.capturedAt,
+        stocks: intradaySnapshots.stocksTotal,
+        crypto: intradaySnapshots.cryptoTotal,
+      })
+      .from(intradaySnapshots)
+      .where(eq(intradaySnapshots.userId, userId))
+      .orderBy(asc(intradaySnapshots.capturedAt))
+      .limit(300);
+
+    const todayNy = getNyDateKey(new Date());
+    const firstTodayIntraday = intradayRaw.find((row) => {
+      if (!row.capturedAt) return false;
+      if (getNyDateKey(row.capturedAt) !== todayNy) return false;
+      const { hour } = getNyHourMinute(row.capturedAt);
+      return hour >= 9;
+    });
+
+    const stocksChangeSinceOpen = firstTodayIntraday
+      ? currentStocksTotal - toNumber(firstTodayIntraday.stocks)
+      : null;
+    const cryptoChangeSinceOpen = firstTodayIntraday
+      ? currentCryptoTotal - toNumber(firstTodayIntraday.crypto)
+      : null;
+    const changeSinceLabel = firstTodayIntraday?.capturedAt
+      ? `since ${toNyTimeLabel(firstTodayIntraday.capturedAt)} ET`
+      : null;
+
+    return {
+      rows: normalizedRows,
+      stocksChangeSinceOpen,
+      cryptoChangeSinceOpen,
+      changeSinceLabel,
+    };
   } catch {
-    return [];
+    return {
+      rows: [],
+      stocksChangeSinceOpen: null,
+      cryptoChangeSinceOpen: null,
+      changeSinceLabel: null,
+    };
   }
 }
 

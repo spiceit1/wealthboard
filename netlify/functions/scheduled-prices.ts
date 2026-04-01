@@ -1,5 +1,8 @@
 import { getDemoUserId } from "../../services/dashboardData";
-import { runPriceOnlySync } from "../../services/runFullSync";
+import { db } from "../../db/client";
+import { accounts, dailySnapshots } from "../../db/schema";
+import { eq, and } from "drizzle-orm";
+import { runFullSync, runPriceOnlySync } from "../../services/runFullSync";
 
 export const config = {
   /**
@@ -40,6 +43,23 @@ function isMarketWindowNy(hour: number, minute: number) {
   return true;
 }
 
+function getNyDateKey(value = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
+function hasFreshCashAsOfNyDay(values: Array<Date | null>, nyDate: string) {
+  const latest = values
+    .filter((value): value is Date => value instanceof Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  if (!latest) return false;
+  return getNyDateKey(latest) === nyDate;
+}
+
 export default async (request: Request) => {
   try {
     const force = new URL(request.url).searchParams.get("force") === "1";
@@ -60,6 +80,38 @@ export default async (request: Request) => {
     const userId = await getDemoUserId();
     if (!userId) {
       return json({ message: "Demo user not found." }, 404);
+    }
+
+    const nyDate = getNyDateKey();
+    const existingDaily = await db.query.dailySnapshots.findFirst({
+      where: and(eq(dailySnapshots.userId, userId), eq(dailySnapshots.snapshotDate, nyDate)),
+    });
+    const cashRows = await db.query.accounts.findMany({
+      where: and(eq(accounts.userId, userId), eq(accounts.type, "checking")),
+    });
+    const savingsRows = await db.query.accounts.findMany({
+      where: and(eq(accounts.userId, userId), eq(accounts.type, "savings")),
+    });
+    const hasFreshCash = hasFreshCashAsOfNyDay(
+      [...cashRows.map((row) => row.balanceAsOf), ...savingsRows.map((row) => row.balanceAsOf)],
+      nyDate,
+    );
+
+    // Daily recovery rule: if today's 9:00 snapshot is missing, keep retrying full scheduled sync
+    // during the intraday schedule window until daily snapshot is written.
+    // Also retry if snapshot exists but Plaid cash balances are still stale.
+    if (!existingDaily || !hasFreshCash) {
+      const run = await runFullSync(userId, "scheduled");
+      return json({
+        ...run,
+        scheduled: true,
+        mode: "daily-recovery-full-sync",
+        nyDate,
+        hasFreshCash,
+        nyWeekday: weekday,
+        nyHour: hour,
+        nyMinute: minute,
+      });
     }
 
     // Run synchronously in scheduled functions; background promises are not reliable in serverless.

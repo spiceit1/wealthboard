@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 import { HoldingsSyncButton } from "@/components/holdings/holdings-sync-button";
 import { ManualHoldingEditor } from "@/components/holdings/manual-holding-editor";
@@ -9,6 +10,7 @@ import { PositionsTable } from "@/components/holdings/positions-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTimeEastern, formatUSD } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 
 type HoldingRow = {
   id: string;
@@ -24,6 +26,9 @@ type HoldingRow = {
 
 type HoldingsResponse = {
   rows: HoldingRow[];
+  stocksChangeSinceOpen: number | null;
+  cryptoChangeSinceOpen: number | null;
+  changeSinceLabel: string | null;
 };
 
 async function fetchHoldings(): Promise<HoldingsResponse> {
@@ -57,6 +62,9 @@ export function HoldingsOverview() {
   );
   const stocksAsOf = useMemo(() => latestIso(stockRows.map((row) => row.updatedAt)), [stockRows]);
   const cryptoAsOf = useMemo(() => latestIso(cryptoRows.map((row) => row.updatedAt)), [cryptoRows]);
+  const stocksChangeSinceOpen = holdingsQuery.data?.stocksChangeSinceOpen ?? null;
+  const cryptoChangeSinceOpen = holdingsQuery.data?.cryptoChangeSinceOpen ?? null;
+  const changeSinceLabel = holdingsQuery.data?.changeSinceLabel ?? "since 9:00 ET";
 
   if (holdingsQuery.isPending) {
     return (
@@ -139,14 +147,64 @@ export function HoldingsOverview() {
             <CardTitle className="text-base">Stocks Total</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(stocksAsOf)}</CardDescription>
           </CardHeader>
-          <CardContent className="text-xl tabular-nums">{formatUSD(stockTotal)}</CardContent>
+          <CardContent className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xl tabular-nums">{formatUSD(stockTotal)}</p>
+              {stocksChangeSinceOpen != null && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                    stocksChangeSinceOpen >= 0
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-red-50 text-red-700",
+                  )}
+                >
+                  {stocksChangeSinceOpen >= 0 ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  {stocksChangeSinceOpen >= 0 ? "+" : ""}
+                  {formatUSD(Math.abs(stocksChangeSinceOpen))}
+                </span>
+              )}
+            </div>
+            {stocksChangeSinceOpen != null && (
+              <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
+            )}
+          </CardContent>
         </Card>
         <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Crypto Total</CardTitle>
             <CardDescription>As of {formatDateTimeEastern(cryptoAsOf)}</CardDescription>
           </CardHeader>
-          <CardContent className="text-xl tabular-nums">{formatUSD(cryptoTotal)}</CardContent>
+          <CardContent className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xl tabular-nums">{formatUSD(cryptoTotal)}</p>
+              {cryptoChangeSinceOpen != null && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                    cryptoChangeSinceOpen >= 0
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-red-50 text-red-700",
+                  )}
+                >
+                  {cryptoChangeSinceOpen >= 0 ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  {cryptoChangeSinceOpen >= 0 ? "+" : ""}
+                  {formatUSD(Math.abs(cryptoChangeSinceOpen))}
+                </span>
+              )}
+            </div>
+            {cryptoChangeSinceOpen != null && (
+              <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
+            )}
+          </CardContent>
         </Card>
       </div>
 

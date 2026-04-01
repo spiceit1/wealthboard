@@ -62,6 +62,9 @@ type DashboardResponse = {
     crypto: number;
     total: number;
     dailyChange: number;
+    cashDailyChange?: number;
+    stocksDailyChange?: number;
+    cryptoDailyChange?: number;
     changeSinceLabel?: string;
     changeSinceAt?: string | null;
     asOf: string | null;
@@ -116,21 +119,45 @@ function tooltipCurrency(value: unknown) {
 function IntradayTooltipContent({
   active,
   payload,
+  selectedSeries,
 }: {
   active?: boolean;
   payload?: Array<{ payload: { capturedAt?: string | null; total: number; cash: number; stocks: number; crypto: number } }>;
+  selectedSeries: "total" | "cash" | "stocks" | "crypto";
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
+  const label =
+    selectedSeries === "total"
+      ? "Total"
+      : selectedSeries === "cash"
+        ? "Cash"
+        : selectedSeries === "stocks"
+          ? "Stocks"
+          : "Crypto";
+  const value =
+    selectedSeries === "total"
+      ? row.total
+      : selectedSeries === "cash"
+        ? row.cash
+        : selectedSeries === "stocks"
+          ? row.stocks
+          : row.crypto;
   return (
     <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-sm">
       <p className="mb-1 text-muted-foreground">
         {row.capturedAt ? formatDateTimeEastern(row.capturedAt) : "Intraday point"}
       </p>
-      <p className="font-medium">Total: {formatUSD(row.total)}</p>
-      <p className="text-muted-foreground">Cash: {formatUSD(row.cash)}</p>
-      <p className="text-muted-foreground">Stocks: {formatUSD(row.stocks)}</p>
-      <p className="text-muted-foreground">Crypto: {formatUSD(row.crypto)}</p>
+      {selectedSeries === "total" ? (
+        <>
+          <p className="font-medium">Total: {formatUSD(row.total)}</p>
+          <p className="text-muted-foreground">Cash: {formatUSD(row.cash)}</p>
+          <p className="text-muted-foreground">Stocks: {formatUSD(row.stocks)}</p>
+          <p className="text-muted-foreground">Crypto: {formatUSD(row.crypto)}</p>
+        </>
+      ) : (
+        <p className="font-medium">{label}: {formatUSD(value)}</p>
+      )}
     </div>
   );
 }
@@ -290,6 +317,9 @@ export function DashboardOverview() {
   const dailyChange = dashboardQuery.data?.summary?.dailyChange ?? 0;
   const changeSinceLabel = dashboardQuery.data?.summary?.changeSinceLabel ?? "since latest snapshot";
   const changeIsPositive = dailyChange >= 0;
+  const cashDailyChange = dashboardQuery.data?.summary?.cashDailyChange ?? 0;
+  const stocksDailyChange = dashboardQuery.data?.summary?.stocksDailyChange ?? 0;
+  const cryptoDailyChange = dashboardQuery.data?.summary?.cryptoDailyChange ?? 0;
 
   if (dashboardQuery.isPending) {
     return (
@@ -389,10 +419,30 @@ export function DashboardOverview() {
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: "Total Net Worth", value: activeSummary?.total ?? 0, asOf: activeSummary?.asOf },
-          { label: "Cash", value: activeSummary?.cash ?? 0, asOf: activeSummary?.cashAsOf },
-          { label: "Stocks", value: activeSummary?.stocks ?? 0, asOf: activeSummary?.stocksAsOf },
-          { label: "Crypto", value: activeSummary?.crypto ?? 0, asOf: activeSummary?.cryptoAsOf },
+          {
+            label: "Total Net Worth",
+            value: activeSummary?.total ?? 0,
+            asOf: activeSummary?.asOf,
+            change: dailyChange,
+          },
+          {
+            label: "Cash",
+            value: activeSummary?.cash ?? 0,
+            asOf: activeSummary?.cashAsOf,
+            change: cashDailyChange,
+          },
+          {
+            label: "Stocks",
+            value: activeSummary?.stocks ?? 0,
+            asOf: activeSummary?.stocksAsOf,
+            change: stocksDailyChange,
+          },
+          {
+            label: "Crypto",
+            value: activeSummary?.crypto ?? 0,
+            asOf: activeSummary?.cryptoAsOf,
+            change: cryptoDailyChange,
+          },
         ].map((kpi) => (
           <Card
             key={kpi.label}
@@ -403,6 +453,21 @@ export function DashboardOverview() {
                 {kpi.label}
               </CardDescription>
               <CardTitle className="text-xl tabular-nums">{formatUSD(kpi.value)}</CardTitle>
+              {kpi.change != null && (
+                <div className="space-y-1">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      kpi.change >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
+                    )}
+                  >
+                    {kpi.change >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {kpi.change >= 0 ? "+" : ""}
+                    {formatUSD(Math.abs(kpi.change))}
+                  </span>
+                  <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
+                </div>
+              )}
               {kpi.asOf && (
                 <p className="text-[11px] text-muted-foreground">
                   <RelativeTime value={kpi.asOf} />
@@ -417,7 +482,7 @@ export function DashboardOverview() {
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3 wb-card-hover">
           <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle className="wb-section-title">Net Worth Trend</CardTitle>
                 <CardDescription>
@@ -426,7 +491,7 @@ export function DashboardOverview() {
                     : "Daily snapshots from scheduled sync (runs daily at 9:00 AM America/New_York)"}
                 </CardDescription>
               </div>
-              <div className="flex flex-col items-end gap-2">
+              <div className="ml-auto shrink-0 space-y-2 text-right">
                 <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
                   {(["1D", "7D", "30D", "90D", "1Y", "All"] as const).map((option) => (
                     <button
@@ -444,7 +509,7 @@ export function DashboardOverview() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-2">
                   <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
                     {(
                       [
@@ -519,7 +584,7 @@ export function DashboardOverview() {
                       return "Time";
                     }}
                     formatter={(value) => tooltipCurrency(value)}
-                    content={<IntradayTooltipContent />}
+                    content={<IntradayTooltipContent selectedSeries={chartSeries} />}
                     contentStyle={{
                       borderRadius: "8px",
                       border: "1px solid var(--border)",
