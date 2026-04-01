@@ -504,11 +504,27 @@ export async function getHoldingsOverview(userId: string) {
       ? `since ${toNyTimeLabel(firstTodayIntraday.capturedAt)} ET`
       : null;
 
+    const [latestCompletedSync] = await db
+      .select({
+        completedAt: syncRuns.completedAt,
+      })
+      .from(syncRuns)
+      .where(
+        and(
+          eq(syncRuns.userId, userId),
+          eq(syncRuns.status, "completed"),
+          inArray(syncRuns.trigger, ["manual", "system", "scheduled"]),
+        ),
+      )
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(1);
+
     return {
       rows: normalizedRows,
       stocksChangeSinceOpen,
       cryptoChangeSinceOpen,
       changeSinceLabel,
+      latestSyncAt: latestCompletedSync?.completedAt?.toISOString() ?? null,
     };
   } catch {
     return {
@@ -516,6 +532,7 @@ export async function getHoldingsOverview(userId: string) {
       stocksChangeSinceOpen: null,
       cryptoChangeSinceOpen: null,
       changeSinceLabel: null,
+      latestSyncAt: null,
     };
   }
 }

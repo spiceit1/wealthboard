@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTimeEastern, formatUSD } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import { RelativeTime } from "@/components/shared/relative-time";
 
 type HoldingRow = {
   id: string;
@@ -29,6 +30,7 @@ type HoldingsResponse = {
   stocksChangeSinceOpen: number | null;
   cryptoChangeSinceOpen: number | null;
   changeSinceLabel: string | null;
+  latestSyncAt: string | null;
 };
 
 async function fetchHoldings(): Promise<HoldingsResponse> {
@@ -88,6 +90,7 @@ export function HoldingsOverview() {
   const stocksChangeSinceOpen = holdingsQuery.data?.stocksChangeSinceOpen ?? null;
   const cryptoChangeSinceOpen = holdingsQuery.data?.cryptoChangeSinceOpen ?? null;
   const changeSinceLabel = holdingsQuery.data?.changeSinceLabel ?? "since 9:00 ET";
+  const latestSyncAt = holdingsQuery.data?.latestSyncAt ?? null;
 
   if (holdingsQuery.isPending) {
     return (
@@ -169,8 +172,8 @@ export function HoldingsOverview() {
           <CardHeader>
             <CardTitle className="text-base">Stocks Total</CardTitle>
             <CardDescription>
-              As of {formatDateTimeEastern(stocksAsOf)} ({stocksFreshTodayCount}/{stockRows.length} symbols fresh
-              today)
+              Quote as of {formatDateTimeEastern(stocksAsOf)} ({stocksFreshTodayCount}/{stockRows.length} symbols
+              fresh today)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
@@ -203,12 +206,16 @@ export function HoldingsOverview() {
                 Includes stale symbol quotes (oldest {formatDateTimeEastern(stocksOldestAsOf)}).
               </p>
             )}
+            <p className="text-[11px] text-muted-foreground">
+              Last sync: {formatDateTimeEastern(latestSyncAt, "Never")}
+              {latestSyncAt ? <> (<RelativeTime value={latestSyncAt} />)</> : null}
+            </p>
           </CardContent>
         </Card>
         <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Crypto Total</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(cryptoAsOf)}</CardDescription>
+            <CardDescription>Quote as of {formatDateTimeEastern(cryptoAsOf)}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
@@ -235,6 +242,10 @@ export function HoldingsOverview() {
             {cryptoChangeSinceOpen != null && (
               <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
             )}
+            <p className="text-[11px] text-muted-foreground">
+              Last sync: {formatDateTimeEastern(latestSyncAt, "Never")}
+              {latestSyncAt ? <> (<RelativeTime value={latestSyncAt} />)</> : null}
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -418,32 +418,41 @@ export function DashboardOverview() {
 
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            label: "Total Net Worth",
-            value: activeSummary?.total ?? 0,
-            asOf: activeSummary?.asOf,
-            change: dailyChange,
-          },
-          {
-            label: "Cash",
-            value: activeSummary?.cash ?? 0,
-            asOf: activeSummary?.cashAsOf,
-            change: cashDailyChange,
-          },
-          {
-            label: "Stocks",
-            value: activeSummary?.stocks ?? 0,
-            asOf: activeSummary?.stocksAsOf,
-            change: stocksDailyChange,
-          },
-          {
-            label: "Crypto",
-            value: activeSummary?.crypto ?? 0,
-            asOf: activeSummary?.cryptoAsOf,
-            change: cryptoDailyChange,
-          },
-        ].map((kpi) => (
+        {(() => {
+          const latestSyncAt = dashboardQuery.data?.latestSync?.completedAt ?? null;
+          return [
+            {
+              kind: "total" as const,
+              label: "Total Net Worth",
+              value: activeSummary?.total ?? 0,
+              asOf: activeSummary?.asOf,
+              change: dailyChange,
+            },
+            {
+              kind: "cash" as const,
+              label: "Cash",
+              value: activeSummary?.cash ?? 0,
+              asOf: activeSummary?.cashAsOf,
+              change: cashDailyChange,
+            },
+            {
+              kind: "stocks" as const,
+              label: "Stocks",
+              value: activeSummary?.stocks ?? 0,
+              asOf: activeSummary?.stocksAsOf,
+              change: stocksDailyChange,
+              latestSyncAt,
+            },
+            {
+              kind: "crypto" as const,
+              label: "Crypto",
+              value: activeSummary?.crypto ?? 0,
+              asOf: activeSummary?.cryptoAsOf,
+              change: cryptoDailyChange,
+              latestSyncAt,
+            },
+          ];
+        })().map((kpi) => (
           <Card
             key={kpi.label}
             className={cn("wb-card-hover", summaryPulse && "wb-pulse-highlight")}
@@ -468,11 +477,21 @@ export function DashboardOverview() {
                   <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
                 </div>
               )}
-              {kpi.asOf && (
+              {kpi.asOf && (kpi.kind === "stocks" || kpi.kind === "crypto") ? (
+                <div className="space-y-0.5 text-[11px] text-muted-foreground">
+                  <p>
+                    Quote as of {formatDateTimeEastern(kpi.asOf)} (<RelativeTime value={kpi.asOf} />)
+                  </p>
+                  <p>
+                    Last sync: {formatDateTimeEastern(kpi.latestSyncAt, "Never")}
+                    {kpi.latestSyncAt ? <> (<RelativeTime value={kpi.latestSyncAt} />)</> : null}
+                  </p>
+                </div>
+              ) : kpi.asOf ? (
                 <p className="text-[11px] text-muted-foreground">
                   <RelativeTime value={kpi.asOf} />
                 </p>
-              )}
+              ) : null}
             </CardHeader>
           </Card>
         ))}

@@ -6,7 +6,13 @@ export async function GET() {
   const userId = await getDemoUserId();
   if (!userId) {
     return NextResponse.json(
-      { rows: [], stocksChangeSinceOpen: null, cryptoChangeSinceOpen: null, changeSinceLabel: null },
+      {
+        rows: [],
+        stocksChangeSinceOpen: null,
+        cryptoChangeSinceOpen: null,
+        changeSinceLabel: null,
+        latestSyncAt: null,
+      },
       { status: 200 },
     );
   }
