@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { formatUSD } from "@/lib/formatters";
+import { formatDateTimeEastern, formatUSD } from "@/lib/formatters";
 import { invalidateForManualHoldingChange } from "@/lib/query-invalidation";
 
 type Row = {
@@ -15,6 +15,7 @@ type Row = {
   quantity: number;
   lastPrice: number;
   marketValue: number;
+  updatedAt?: string | null;
   isManual: boolean;
 };
 
@@ -136,6 +137,9 @@ export function PositionsTable({ rows }: Props) {
                 Value
               </th>
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Latest Sync
+              </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Actions
               </th>
             </tr>
@@ -158,6 +162,9 @@ export function PositionsTable({ rows }: Props) {
                 </td>
                 <td className="py-2 pr-4">{formatUSD(row.lastPrice)}</td>
                 <td className="py-2 pr-4">{formatUSD(row.marketValue)}</td>
+                <td className="py-2 pr-4 text-xs text-muted-foreground">
+                  {formatDateTimeEastern(row.updatedAt, "Never")}
+                </td>
                 <td className="py-2 pr-4">
                   {row.isManual && (row.assetClass === "stock" || row.assetClass === "crypto") ? (
                     <div className="flex gap-2">
@@ -218,7 +225,7 @@ export function PositionsTable({ rows }: Props) {
             ))}
             {!tableRows.length && (
               <tr className="wb-table-row">
-                <td className="py-3 text-muted-foreground" colSpan={6}>
+                <td className="py-3 text-muted-foreground" colSpan={7}>
                   No {title.toLowerCase()} found.
                 </td>
               </tr>

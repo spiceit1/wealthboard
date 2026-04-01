@@ -6,18 +6,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { invalidateForManualHoldingChange } from "@/lib/query-invalidation";
 
-type Row = {
-  id: string;
-  symbol: string;
-  assetClass: "cash" | "stock" | "crypto";
-  quantity: number;
-  isManual: boolean;
-};
-
-type Props = {
-  rows: Row[];
-};
-
 type HoldingQueryRow = {
   id: string;
   symbol: string;
@@ -34,7 +22,7 @@ type HoldingsQueryData = {
   rows: HoldingQueryRow[];
 };
 
-export function ManualHoldingEditor({ rows }: Props) {
+export function ManualHoldingEditor() {
   const queryClient = useQueryClient();
   const [symbol, setSymbol] = useState("");
   const [quantity, setQuantity] = useState("");

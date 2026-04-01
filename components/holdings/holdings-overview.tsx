@@ -46,13 +46,31 @@ function latestIso(values: Array<string | null | undefined>) {
   return new Date(Math.max(...times)).toISOString();
 }
 
+function oldestIso(values: Array<string | null | undefined>) {
+  const times = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (!times.length) return null;
+  return new Date(Math.min(...times)).toISOString();
+}
+
+function nyDateKeyFromIso(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
+
 export function HoldingsOverview() {
   const holdingsQuery = useQuery({
     queryKey: ["holdings-overview"],
     queryFn: fetchHoldings,
   });
 
-  const rows = holdingsQuery.data?.rows ?? [];
+  const rows = useMemo(() => holdingsQuery.data?.rows ?? [], [holdingsQuery.data?.rows]);
   const stockRows = useMemo(() => rows.filter((row) => row.assetClass === "stock"), [rows]);
   const cryptoRows = useMemo(() => rows.filter((row) => row.assetClass === "crypto"), [rows]);
   const stockTotal = useMemo(() => stockRows.reduce((sum, row) => sum + row.marketValue, 0), [stockRows]);
@@ -61,7 +79,12 @@ export function HoldingsOverview() {
     [cryptoRows],
   );
   const stocksAsOf = useMemo(() => latestIso(stockRows.map((row) => row.updatedAt)), [stockRows]);
+  const stocksOldestAsOf = useMemo(() => oldestIso(stockRows.map((row) => row.updatedAt)), [stockRows]);
   const cryptoAsOf = useMemo(() => latestIso(cryptoRows.map((row) => row.updatedAt)), [cryptoRows]);
+  const stocksFreshTodayCount = useMemo(() => {
+    const todayNy = nyDateKeyFromIso(new Date().toISOString());
+    return stockRows.filter((row) => row.updatedAt && nyDateKeyFromIso(row.updatedAt) === todayNy).length;
+  }, [stockRows]);
   const stocksChangeSinceOpen = holdingsQuery.data?.stocksChangeSinceOpen ?? null;
   const cryptoChangeSinceOpen = holdingsQuery.data?.cryptoChangeSinceOpen ?? null;
   const changeSinceLabel = holdingsQuery.data?.changeSinceLabel ?? "since 9:00 ET";
@@ -139,13 +162,16 @@ export function HoldingsOverview() {
         <HoldingsSyncButton />
       </section>
 
-      <ManualHoldingEditor rows={rows} />
+      <ManualHoldingEditor />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card className="wb-card-hover">
           <CardHeader>
             <CardTitle className="text-base">Stocks Total</CardTitle>
-            <CardDescription>As of {formatDateTimeEastern(stocksAsOf)}</CardDescription>
+            <CardDescription>
+              As of {formatDateTimeEastern(stocksAsOf)} ({stocksFreshTodayCount}/{stockRows.length} symbols fresh
+              today)
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
@@ -171,6 +197,11 @@ export function HoldingsOverview() {
             </div>
             {stocksChangeSinceOpen != null && (
               <p className="text-[11px] text-muted-foreground">{changeSinceLabel}</p>
+            )}
+            {stocksAsOf && stocksOldestAsOf && stocksAsOf !== stocksOldestAsOf && (
+              <p className="text-[11px] text-amber-700">
+                Includes stale symbol quotes (oldest {formatDateTimeEastern(stocksOldestAsOf)}).
+              </p>
             )}
           </CardContent>
         </Card>

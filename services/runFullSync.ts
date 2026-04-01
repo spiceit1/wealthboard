@@ -259,7 +259,57 @@ async function removeAutoStockHoldings(userId: string) {
     .where(and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.isManual, false)));
 }
 
-async function fetchStockPriceStooq(symbol: string): Promise<number | null> {
+type StockQuote = { price: number; pricedAt: Date };
+
+function datePartsInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(value);
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value ?? "0"),
+    month: Number(parts.find((part) => part.type === "month")?.value ?? "0"),
+    day: Number(parts.find((part) => part.type === "day")?.value ?? "0"),
+    hour: Number(parts.find((part) => part.type === "hour")?.value ?? "0"),
+    minute: Number(parts.find((part) => part.type === "minute")?.value ?? "0"),
+    second: Number(parts.find((part) => part.type === "second")?.value ?? "0"),
+  };
+}
+
+function parseLocalTimeInZone(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+) {
+  // Convert local wall-clock time in `timeZone` to UTC Date.
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 2; i += 1) {
+    const zoned = datePartsInTimeZone(new Date(utcMs), timeZone);
+    const desiredMs = Date.UTC(year, month - 1, day, hour, minute, second);
+    const zonedMs = Date.UTC(
+      zoned.year,
+      zoned.month - 1,
+      zoned.day,
+      zoned.hour,
+      zoned.minute,
+      zoned.second,
+    );
+    utcMs += desiredMs - zonedMs;
+  }
+  return new Date(utcMs);
+}
+
+async function fetchStockQuoteStooq(symbol: string): Promise<StockQuote | null> {
   const normalized = symbol.trim().toLowerCase();
   if (!normalized) return null;
   const candidates = [`${normalized}.us`, normalized];
@@ -287,18 +337,39 @@ async function fetchStockPriceStooq(symbol: string): Promise<number | null> {
     // Stooq may return either header+row or only one data row.
     const row = lines.length > 1 ? lines[1] : lines[0];
     const columns = row.split(",");
-    const close = Number(columns[4]);
-    if (Number.isFinite(close) && close > 0) return close;
+    // Stooq CSV columns: symbol,date,time,open,high,low,close,volume
+    // Use close/last trade price, not intraday high.
+    const close = Number(columns[6]);
+    const fallback = Number(columns[4]);
+    const price = Number.isFinite(close) && close > 0 ? close : fallback;
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const dateRaw = (columns[1] ?? "").trim();
+    const timeRaw = (columns[2] ?? "").trim();
+    let pricedAt = new Date();
+    if (/^\d{8}$/.test(dateRaw) && /^\d{6}$/.test(timeRaw)) {
+      const year = Number(dateRaw.slice(0, 4));
+      const month = Number(dateRaw.slice(4, 6));
+      const day = Number(dateRaw.slice(6, 8));
+      const hour = Number(timeRaw.slice(0, 2));
+      const minute = Number(timeRaw.slice(2, 4));
+      const second = Number(timeRaw.slice(4, 6));
+      // Stooq timestamps are local to Europe/Warsaw trading calendar.
+      const parsed = parseLocalTimeInZone(year, month, day, hour, minute, second, "Europe/Warsaw");
+      if (Number.isFinite(parsed.getTime())) {
+        pricedAt = parsed;
+      }
+    }
+    return { price, pricedAt };
   }
   return null;
 }
 
 async function fetchStockPrices(symbols: string[]) {
-  const map = new Map<string, number>();
+  const map = new Map<string, StockQuote>();
   for (const symbol of symbols) {
     try {
-      const price = await fetchStockPriceStooq(symbol);
-      if (price != null) map.set(symbol.toUpperCase(), price);
+      const quote = await fetchStockQuoteStooq(symbol);
+      if (quote) map.set(symbol.toUpperCase(), quote);
     } catch {
       // best-effort pricing only
     }
@@ -341,30 +412,35 @@ async function refreshManualHoldingValuations(userId: string) {
 
   for (const holding of manualRows) {
     const symbol = holding.symbol.toUpperCase();
-    const matchedPrice =
-      holding.assetClass === "stock" ? stockPriceMap.get(symbol) : cryptoPriceMap.get(symbol);
+    const stockQuote = stockPriceMap.get(symbol);
+    const cryptoPrice = cryptoPriceMap.get(symbol);
+    const matchedPrice = holding.assetClass === "stock" ? stockQuote?.price : cryptoPrice;
     if (!matchedPrice) continue;
 
     const quantity = Number(holding.quantity);
     const marketValue = matchedPrice * quantity;
+    const pricedAt = holding.assetClass === "stock" ? (stockQuote?.pricedAt ?? new Date()) : new Date();
 
     await db
       .update(holdings)
       .set({
         lastPrice: matchedPrice.toFixed(6),
         marketValue: toMoney(marketValue),
-        updatedAt: new Date(),
+        updatedAt: pricedAt,
       })
       .where(eq(holdings.id, holding.id));
 
-    await db.insert(prices).values({
-      symbol,
-      assetClass: holding.assetClass,
-      currency: "USD",
-      price: matchedPrice.toFixed(6),
-      pricedAt: new Date(),
-      source: holding.assetClass === "stock" ? "snaptrade" : "coingecko",
-    });
+    await db
+      .insert(prices)
+      .values({
+        symbol,
+        assetClass: holding.assetClass,
+        currency: "USD",
+        price: matchedPrice.toFixed(6),
+        pricedAt,
+        source: holding.assetClass === "stock" ? "snaptrade" : "coingecko",
+      })
+      .onConflictDoNothing();
     if (holding.assetClass === "stock") updatedStockCount += 1;
     if (holding.assetClass === "crypto") updatedCryptoCount += 1;
   }
