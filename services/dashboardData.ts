@@ -180,33 +180,30 @@ export async function getDashboardData(userId: string) {
         dailyChange: total - previousTotal,
       };
     });
-    const firstIntradayPoint = intradayRowsForChart[0];
-    const firstIntradayTotal = firstIntradayPoint ? toNumber(firstIntradayPoint.total) : null;
-    const firstIntradayCash = firstIntradayPoint ? toNumber(firstIntradayPoint.cash) : null;
-    const firstIntradayStocks = firstIntradayPoint ? toNumber(firstIntradayPoint.stocks) : null;
-    const firstIntradayCrypto = firstIntradayPoint ? toNumber(firstIntradayPoint.crypto) : null;
-    const previousScheduledTotal = snapshots[1] ? toNumber(snapshots[1].total) : null;
-    const previousScheduledCash = snapshots[1] ? toNumber(snapshots[1].cash) : null;
-    const previousScheduledStocks = snapshots[1] ? toNumber(snapshots[1].stocks) : null;
-    const previousScheduledCrypto = snapshots[1] ? toNumber(snapshots[1].crypto) : null;
+    const intradayAsc = [...intradayRaw].reverse();
+    const previousDayLastIntraday = [...intradayAsc].reverse().find((row) => {
+      if (!row.capturedAt) return false;
+      return getNyDateKey(row.capturedAt) < todayNy;
+    });
+    const previousNySnapshot = snapshots.find((row) => row.date < todayNy);
     const baselineForDailyChange =
-      firstIntradayTotal ?? previousScheduledTotal ?? (latestSnapshot ? toNumber(latestSnapshot.total) : liveTotal);
+      (previousDayLastIntraday ? toNumber(previousDayLastIntraday.total) : null) ??
+      (previousNySnapshot ? toNumber(previousNySnapshot.total) : null) ??
+      (latestSnapshot ? toNumber(latestSnapshot.total) : liveTotal);
     const baselineCash =
-      firstIntradayCash ?? previousScheduledCash ?? (latestSnapshot ? toNumber(latestSnapshot.cash) : liveCashTotal);
+      (previousDayLastIntraday ? toNumber(previousDayLastIntraday.cash) : null) ??
+      (previousNySnapshot ? toNumber(previousNySnapshot.cash) : null) ??
+      (latestSnapshot ? toNumber(latestSnapshot.cash) : liveCashTotal);
     const baselineStocks =
-      firstIntradayStocks ??
-      previousScheduledStocks ??
+      (previousDayLastIntraday ? toNumber(previousDayLastIntraday.stocks) : null) ??
+      (previousNySnapshot ? toNumber(previousNySnapshot.stocks) : null) ??
       (latestSnapshot ? toNumber(latestSnapshot.stocks) : liveStocksTotal);
     const baselineCrypto =
-      firstIntradayCrypto ??
-      previousScheduledCrypto ??
+      (previousDayLastIntraday ? toNumber(previousDayLastIntraday.crypto) : null) ??
+      (previousNySnapshot ? toNumber(previousNySnapshot.crypto) : null) ??
       (latestSnapshot ? toNumber(latestSnapshot.crypto) : liveCryptoTotal);
-    const changeSinceLabel = firstIntradayPoint?.capturedAt
-      ? `since ${toNyTimeLabel(firstIntradayPoint.capturedAt)} ET`
-      : snapshots[1]
-        ? `since ${snapshots[1].date} snapshot`
-        : "since latest snapshot";
-    const changeSinceAt = firstIntradayPoint?.capturedAt?.toISOString() ?? null;
+    const changeSinceLabel = "since 12:00 AM ET";
+    const changeSinceAt = null;
 
     const latestRun = await db
       .select({
