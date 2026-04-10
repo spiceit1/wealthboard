@@ -56,6 +56,53 @@ function toNyTimeLabel(value: Date) {
   }).format(value);
 }
 
+function datePartsInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(value);
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value ?? "0"),
+    month: Number(parts.find((part) => part.type === "month")?.value ?? "0"),
+    day: Number(parts.find((part) => part.type === "day")?.value ?? "0"),
+    hour: Number(parts.find((part) => part.type === "hour")?.value ?? "0"),
+    minute: Number(parts.find((part) => part.type === "minute")?.value ?? "0"),
+    second: Number(parts.find((part) => part.type === "second")?.value ?? "0"),
+  };
+}
+
+function parseLocalTimeInZone(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+) {
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 2; i += 1) {
+    const zoned = datePartsInTimeZone(new Date(utcMs), timeZone);
+    const desiredMs = Date.UTC(year, month - 1, day, hour, minute, second);
+    const zonedMs = Date.UTC(
+      zoned.year,
+      zoned.month - 1,
+      zoned.day,
+      zoned.hour,
+      zoned.minute,
+      zoned.second,
+    );
+    utcMs += desiredMs - zonedMs;
+  }
+  return new Date(utcMs);
+}
+
 export async function getDemoUserId() {
   try {
     const user = await db.query.users.findFirst({
@@ -139,47 +186,6 @@ export async function getDashboardData(userId: string) {
       latestSnapshot?.createdAt ?? null,
     ]);
 
-    const shouldAppendLiveIntradayPoint =
-      summaryAsOf != null &&
-      (() => {
-        const asOfDate = new Date(summaryAsOf);
-        if (!Number.isFinite(asOfDate.getTime())) return false;
-        if (getNyDateKey(asOfDate) !== todayNy) return false;
-        const { hour } = getNyHourMinute(asOfDate);
-        if (hour < 9) return false;
-        const latestIntraday = intradayToday[intradayToday.length - 1];
-        if (!latestIntraday?.capturedAt) return true;
-        return asOfDate.getTime() - latestIntraday.capturedAt.getTime() > 60_000;
-      })();
-
-    const intradayRowsForChart = shouldAppendLiveIntradayPoint
-      ? [
-          ...intradayToday,
-          {
-            id: "live",
-            capturedAt: summaryAsOf ? new Date(summaryAsOf) : new Date(),
-            cash: liveCashTotal.toFixed(2),
-            stocks: liveStocksTotal.toFixed(2),
-            crypto: liveCryptoTotal.toFixed(2),
-            total: liveTotal.toFixed(2),
-          },
-        ]
-      : intradayToday;
-
-    const intradayHistory = intradayRowsForChart.map((row, index) => {
-      const total = toNumber(row.total);
-      const previousTotal = index > 0 ? toNumber(intradayRowsForChart[index - 1].total) : total;
-      return {
-        id: row.id,
-        date: toNyTimeLabel(row.capturedAt),
-        capturedAt: row.capturedAt?.toISOString() ?? null,
-        cash: toNumber(row.cash),
-        stocks: toNumber(row.stocks),
-        crypto: toNumber(row.crypto),
-        total,
-        dailyChange: total - previousTotal,
-      };
-    });
     const intradayAsc = [...intradayRaw].reverse();
     const previousDayLastIntraday = [...intradayAsc].reverse().find((row) => {
       if (!row.capturedAt) return false;
@@ -202,6 +208,64 @@ export async function getDashboardData(userId: string) {
       (previousDayLastIntraday ? toNumber(previousDayLastIntraday.crypto) : null) ??
       (previousNySnapshot ? toNumber(previousNySnapshot.crypto) : null) ??
       (latestSnapshot ? toNumber(latestSnapshot.crypto) : liveCryptoTotal);
+
+    const midnightBaselinePoint = (() => {
+      if (!previousDayLastIntraday && !previousNySnapshot) return null;
+      const [year, month, day] = todayNy.split("-").map((part) => Number(part));
+      if (!year || !month || !day) return null;
+      return {
+        id: "midnight-baseline",
+        capturedAt: parseLocalTimeInZone(year, month, day, 0, 0, 0, "America/New_York"),
+        cash: baselineCash.toFixed(2),
+        stocks: baselineStocks.toFixed(2),
+        crypto: baselineCrypto.toFixed(2),
+        total: baselineForDailyChange.toFixed(2),
+      };
+    })();
+
+    const intradayChartSeed = midnightBaselinePoint ? [midnightBaselinePoint, ...intradayToday] : intradayToday;
+
+    const shouldAppendLiveIntradayPoint =
+      summaryAsOf != null &&
+      (() => {
+        const asOfDate = new Date(summaryAsOf);
+        if (!Number.isFinite(asOfDate.getTime())) return false;
+        if (getNyDateKey(asOfDate) !== todayNy) return false;
+        const { hour } = getNyHourMinute(asOfDate);
+        if (hour < 9) return false;
+        const latestIntraday = intradayChartSeed[intradayChartSeed.length - 1];
+        if (!latestIntraday?.capturedAt) return true;
+        return asOfDate.getTime() - latestIntraday.capturedAt.getTime() > 60_000;
+      })();
+
+    const intradayRowsForChart = shouldAppendLiveIntradayPoint
+      ? [
+          ...intradayChartSeed,
+          {
+            id: "live",
+            capturedAt: summaryAsOf ? new Date(summaryAsOf) : new Date(),
+            cash: liveCashTotal.toFixed(2),
+            stocks: liveStocksTotal.toFixed(2),
+            crypto: liveCryptoTotal.toFixed(2),
+            total: liveTotal.toFixed(2),
+          },
+        ]
+      : intradayChartSeed;
+
+    const intradayHistory = intradayRowsForChart.map((row, index) => {
+      const total = toNumber(row.total);
+      const previousTotal = index > 0 ? toNumber(intradayRowsForChart[index - 1].total) : total;
+      return {
+        id: row.id,
+        date: toNyTimeLabel(row.capturedAt),
+        capturedAt: row.capturedAt?.toISOString() ?? null,
+        cash: toNumber(row.cash),
+        stocks: toNumber(row.stocks),
+        crypto: toNumber(row.crypto),
+        total,
+        dailyChange: total - previousTotal,
+      };
+    });
     const changeSinceLabel = "since 12:00 AM ET";
     const changeSinceAt = null;
 
