@@ -78,6 +78,12 @@ function toMoney(value: number) {
   return value.toFixed(2);
 }
 
+function isPlaidRateLimitError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("429") || message.includes("rate limit");
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -735,6 +741,12 @@ async function executeFullSync(
         await pushEvent(`Saved ${account.name} balance`, "plaid");
       }
     } catch (error) {
+      if (isPlaidRateLimitError(error)) {
+        await pushEvent(
+          "Plaid rate limited (429). Bank balances will retry on the next scheduled recovery window.",
+          "plaid",
+        );
+      }
       await pushEvent(
         `Plaid sync failed: ${error instanceof Error ? error.message : "Unknown error"}`,
         "plaid",

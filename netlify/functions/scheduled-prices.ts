@@ -1,6 +1,6 @@
 import { getDemoUserId } from "../../services/dashboardData";
 import { db } from "../../db/client";
-import { accounts, dailySnapshots } from "../../db/schema";
+import { accounts, dailySnapshots, syncRuns } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import { runFullSync, runPriceOnlySync } from "../../services/runFullSync";
 
@@ -97,10 +97,19 @@ export default async (request: Request) => {
       nyDate,
     );
 
+    const latestScheduledRun = await db.query.syncRuns.findFirst({
+      where: and(eq(syncRuns.userId, userId), eq(syncRuns.trigger, "scheduled")),
+      orderBy: (table, { desc: orderDesc }) => [orderDesc(table.startedAt)],
+    });
+    const scheduledCooldownMs = 60 * 60 * 1000; // one hour between automated Plaid recovery attempts
+    const withinRecoveryCooldown = latestScheduledRun
+      ? Date.now() - latestScheduledRun.startedAt.getTime() < scheduledCooldownMs
+      : false;
+
     // Daily recovery rule: if today's 9:00 snapshot is missing, keep retrying full scheduled sync
     // during the intraday schedule window until daily snapshot is written.
     // Also retry if snapshot exists but Plaid cash balances are still stale.
-    if (!existingDaily || !hasFreshCash) {
+    if ((!existingDaily || !hasFreshCash) && !withinRecoveryCooldown) {
       const run = await runFullSync(userId, "scheduled");
       return json({
         ...run,
@@ -108,6 +117,25 @@ export default async (request: Request) => {
         mode: "daily-recovery-full-sync",
         nyDate,
         hasFreshCash,
+        nyWeekday: weekday,
+        nyHour: hour,
+        nyMinute: minute,
+      });
+    }
+
+    if (!existingDaily || !hasFreshCash) {
+      return json({
+        skipped: true,
+        reason: "Daily recovery sync is cooling down to avoid Plaid rate limits.",
+        nyDate,
+        hasFreshCash,
+        nextRecoveryAttemptInMinutes: Math.ceil(
+          Math.max(
+            0,
+            scheduledCooldownMs -
+              (latestScheduledRun ? Date.now() - latestScheduledRun.startedAt.getTime() : 0),
+          ) / 60000,
+        ),
         nyWeekday: weekday,
         nyHour: hour,
         nyMinute: minute,
