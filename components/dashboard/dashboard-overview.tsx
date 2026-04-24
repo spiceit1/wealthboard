@@ -197,8 +197,8 @@ export function DashboardOverview() {
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: fetchDashboard,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 300_000,
+    refetchIntervalInBackground: false,
   });
 
   const syncMutation = useMutation({

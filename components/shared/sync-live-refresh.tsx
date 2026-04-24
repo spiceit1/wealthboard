@@ -34,6 +34,8 @@ export function SyncLiveRefresh() {
   const previousRef = useRef<LatestSyncRun>(null);
 
   useEffect(() => {
+    const STEADY_POLL_MS = 60_000;
+    const MAX_RETRY_MS = 300_000;
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,6 +84,7 @@ export function SyncLiveRefresh() {
 
     const pollOnce = async () => {
       if (cancelled) return;
+      let nextDelay = STEADY_POLL_MS;
       try {
         const response = await fetch("/api/sync/latest", { method: "GET", cache: "no-store" });
         if (!response.ok) throw new Error("poll request failed");
@@ -91,15 +94,15 @@ export function SyncLiveRefresh() {
         publishStatus({ state: "healthy", via: "poll" });
       } catch {
         failureCount += 1;
-        const retryInMs = Math.min(30_000, 1_000 * 2 ** Math.min(failureCount, 5));
+        const retryInMs = Math.min(MAX_RETRY_MS, 30_000 * 2 ** Math.min(failureCount, 4));
+        nextDelay = retryInMs;
         publishStatus({ state: "degraded", via: "poll", retryInMs });
       }
       if (eventSource?.readyState === EventSource.OPEN) {
         clearPoll();
         return;
       }
-      const delay = Math.min(30_000, 2_000 * 2 ** Math.min(failureCount, 4));
-      pollTimer = setTimeout(() => void pollOnce(), delay);
+      pollTimer = setTimeout(() => void pollOnce(), nextDelay);
     };
 
     const startSse = () => {
@@ -132,7 +135,7 @@ export function SyncLiveRefresh() {
         eventSource?.close();
         eventSource = null;
         failureCount += 1;
-        const retryInMs = Math.min(30_000, 1_000 * 2 ** Math.min(failureCount, 5));
+        const retryInMs = Math.min(MAX_RETRY_MS, 30_000 * 2 ** Math.min(failureCount, 4));
         publishStatus({ state: "degraded", via: "sse", retryInMs });
         if (!pollTimer) {
           void pollOnce();

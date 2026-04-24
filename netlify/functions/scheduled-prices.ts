@@ -6,10 +6,12 @@ import { runFullSync, runPriceOnlySync } from "../../services/runFullSync";
 
 export const config = {
   /**
-   * Every 15 minutes on weekdays (UTC). Runtime gating ensures we only run during
-   * US market hours in America/New_York.
+   * Every 15 minutes on weekdays during a narrowed UTC window.
+   *
+   * 13:00-21:59 UTC covers NY market hours (09:00-16:00) across DST changes
+   * with at most one extra shoulder hour, which runtime gating still skips.
    */
-  schedule: "*/15 * * * 1-5",
+  schedule: "*/15 13-21 * * 1-5",
 };
 
 function json(body: unknown, status = 200) {

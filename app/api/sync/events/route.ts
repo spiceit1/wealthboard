@@ -67,7 +67,7 @@ export async function GET() {
       void sendSnapshot();
       timer = setInterval(() => {
         void sendSnapshot();
-      }, 2000);
+      }, 30_000);
 
       const close = () => {
         closed = true;
@@ -80,7 +80,7 @@ export async function GET() {
       };
 
       // Auto-close long-lived connection to encourage clean reconnects.
-      maxLife = setTimeout(close, 60_000);
+      maxLife = setTimeout(close, 300_000);
 
       safeEnqueue(encodeSse({ connected: true }, "connected"));
     },
