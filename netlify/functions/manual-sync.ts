@@ -6,6 +6,13 @@ import { runFullSync } from "../../services/runFullSync";
 
 export const handler: Handler = async (event) => {
   try {
+    if (!env.INTERNAL_SYNC_TOKEN && env.NODE_ENV === "production") {
+      return {
+        statusCode: 503,
+        body: JSON.stringify({ message: "INTERNAL_SYNC_TOKEN must be configured in production." }),
+      };
+    }
+
     if (env.INTERNAL_SYNC_TOKEN) {
       const provided = event.headers["x-internal-sync-token"] ?? event.headers["X-Internal-Sync-Token"];
       if (provided !== env.INTERNAL_SYNC_TOKEN) {

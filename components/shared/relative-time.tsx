@@ -21,7 +21,7 @@ function toRelativeLabel(value: string) {
 }
 
 export function RelativeTime({ value, emptyLabel = "-" }: Props) {
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -33,7 +33,7 @@ export function RelativeTime({ value, emptyLabel = "-" }: Props) {
   const label = useMemo(() => {
     if (!value) return emptyLabel;
     return toRelativeLabel(value);
-  }, [emptyLabel, value]);
+  }, [emptyLabel, tick, value]);
 
   return <>{label}</>;
 }

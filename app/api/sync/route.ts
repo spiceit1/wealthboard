@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "runId is required" }, { status: 400 });
   }
 
-  const result = await getSyncRunProgress(runId);
+  const result = await getSyncRunProgress(runId, userId);
   return NextResponse.json(result, { status: 200 });
 }
 

@@ -3,6 +3,9 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { env } from "@/lib/env";
 
 function getKey() {
+  if (!env.INTERNAL_SYNC_TOKEN && env.NODE_ENV === "production") {
+    throw new Error("INTERNAL_SYNC_TOKEN is required for secret encryption in production.");
+  }
   const secret = env.INTERNAL_SYNC_TOKEN ?? "dev-fallback-key-change-me";
   return createHash("sha256").update(secret).digest();
 }

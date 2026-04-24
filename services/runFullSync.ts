@@ -52,10 +52,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function toDateKey(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
 function getNyDateKey(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
@@ -501,7 +497,7 @@ async function persistSnapshot(
     return { cash, stocks, crypto, total };
   }
 
-  const dateKey = toDateKey(new Date());
+  const dateKey = getNyDateKey(new Date());
   const previous = await db
     .select({ total: dailySnapshots.totalNetWorth })
     .from(dailySnapshots)
@@ -1010,7 +1006,7 @@ export async function runFullSync(userId: string, trigger: SyncTrigger = "manual
     inFlightRuns.set(run.runId, promise);
     await promise.finally(() => inFlightRuns.delete(run.runId));
   }
-  return getSyncRunProgress(run.runId);
+  return getSyncRunProgress(run.runId, userId);
 }
 
 export async function triggerSyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
@@ -1040,12 +1036,12 @@ export async function runPriceOnlySync(userId: string, trigger: SyncTrigger = "m
     inFlightRuns.set(run.runId, promise);
     await promise.finally(() => inFlightRuns.delete(run.runId));
   }
-  return getSyncRunProgress(run.runId);
+  return getSyncRunProgress(run.runId, userId);
 }
 
-export async function getSyncRunProgress(runId: string): Promise<SyncRunResult> {
+export async function getSyncRunProgress(runId: string, userId: string): Promise<SyncRunResult> {
   const run = await db.query.syncRuns.findFirst({
-    where: eq(syncRuns.id, runId),
+    where: and(eq(syncRuns.id, runId), eq(syncRuns.userId, userId)),
   });
   if (!run) {
     return {

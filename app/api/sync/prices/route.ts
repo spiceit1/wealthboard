@@ -14,11 +14,16 @@ export async function POST() {
 }
 
 export async function GET(request: Request) {
+  const userId = await getDemoUserId();
+  if (!userId) {
+    return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+  }
+
   const runId = new URL(request.url).searchParams.get("runId");
   if (!runId) {
     return NextResponse.json({ message: "runId is required." }, { status: 400 });
   }
 
-  const progress = await getSyncRunProgress(runId);
+  const progress = await getSyncRunProgress(runId, userId);
   return NextResponse.json(progress, { status: 200 });
 }
