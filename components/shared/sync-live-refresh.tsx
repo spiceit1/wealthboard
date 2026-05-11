@@ -36,10 +36,9 @@ export function SyncLiveRefresh() {
   useEffect(() => {
     const STEADY_POLL_MS = 60_000;
     const MAX_RETRY_MS = 300_000;
+    const HIDDEN_POLL_MS = 300_000;
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let eventSource: EventSource | null = null;
     let failureCount = 0;
     const clearPoll = () => {
       if (pollTimer) {
@@ -84,6 +83,12 @@ export function SyncLiveRefresh() {
 
     const pollOnce = async () => {
       if (cancelled) return;
+      if (document.visibilityState === "hidden") {
+        publishStatus({ state: "healthy", via: "poll" });
+        pollTimer = setTimeout(() => void pollOnce(), HIDDEN_POLL_MS);
+        return;
+      }
+
       let nextDelay = STEADY_POLL_MS;
       try {
         const response = await fetch("/api/sync/latest", { method: "GET", cache: "no-store" });
@@ -98,59 +103,25 @@ export function SyncLiveRefresh() {
         nextDelay = retryInMs;
         publishStatus({ state: "degraded", via: "poll", retryInMs });
       }
-      if (eventSource?.readyState === EventSource.OPEN) {
-        clearPoll();
-        return;
-      }
       pollTimer = setTimeout(() => void pollOnce(), nextDelay);
     };
 
-    const startSse = () => {
+    const onVisibilityChange = () => {
       if (cancelled) return;
-      clearPoll();
-      publishStatus({ state: "connecting", via: "sse" });
-      eventSource = new EventSource("/api/sync/events");
-
-      eventSource.onopen = () => {
-        failureCount = 0;
+      if (document.visibilityState === "visible") {
         clearPoll();
-        publishStatus({ state: "healthy", via: "sse" });
-      };
-
-      eventSource.onmessage = (event) => {
-        if (cancelled) return;
-        try {
-          const payload = JSON.parse(event.data) as LatestSyncResponse;
-          void handleLatest(payload);
-          failureCount = 0;
-          clearPoll();
-          publishStatus({ state: "healthy", via: "sse" });
-        } catch {
-          // Ignore malformed events and keep stream alive.
-        }
-      };
-
-      eventSource.onerror = () => {
-        if (cancelled) return;
-        eventSource?.close();
-        eventSource = null;
-        failureCount += 1;
-        const retryInMs = Math.min(MAX_RETRY_MS, 30_000 * 2 ** Math.min(failureCount, 4));
-        publishStatus({ state: "degraded", via: "sse", retryInMs });
-        if (!pollTimer) {
-          void pollOnce();
-        }
-        reconnectTimer = setTimeout(startSse, retryInMs);
-      };
+        void pollOnce();
+      }
     };
 
-    startSse();
+    publishStatus({ state: "connecting", via: "poll" });
+    void pollOnce();
+    window.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      eventSource?.close();
+      window.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [queryClient]);
 

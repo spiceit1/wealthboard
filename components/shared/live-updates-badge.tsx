@@ -18,7 +18,7 @@ function formatRetry(ms: number | undefined) {
 export function LiveUpdatesBadge() {
   const [status, setStatus] = useState<LiveStatusDetail>({
     state: "connecting",
-    via: "sse",
+    via: "poll",
   });
 
   useEffect(() => {
