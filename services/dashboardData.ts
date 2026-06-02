@@ -330,15 +330,19 @@ export async function getDashboardData(userId: string) {
             cryptoAsOf,
           }
         : null,
-      history: sortedHistory.map((row) => ({
-        id: row.id,
-        date: row.date,
-        cash: toNumber(row.cash),
-        stocks: toNumber(row.stocks),
-        crypto: toNumber(row.crypto),
-        total: toNumber(row.total),
-        dailyChange: toNumber(row.dailyChange),
-      })),
+      history: sortedHistory.map((row, index) => {
+        const total = toNumber(row.total);
+        const previousTotal = index > 0 ? toNumber(sortedHistory[index - 1].total) : total;
+        return {
+          id: row.id,
+          date: row.date,
+          cash: toNumber(row.cash),
+          stocks: toNumber(row.stocks),
+          crypto: toNumber(row.crypto),
+          total,
+          dailyChange: total - previousTotal,
+        };
+      }),
       intradayHistory,
       latestIntradaySyncAt: latestIntradayRun?.completedAt?.toISOString() ?? null,
       latestSync: latestRun[0] ?? null,
@@ -362,7 +366,7 @@ export async function getDashboardData(userId: string) {
 
 export async function getHistoryRows(userId: string) {
   try {
-    return await db
+    const rows = await db
       .select({
         date: dailySnapshots.snapshotDate,
         cash: dailySnapshots.cashTotal,
@@ -375,6 +379,15 @@ export async function getHistoryRows(userId: string) {
       .innerJoin(syncRuns, eq(dailySnapshots.syncRunId, syncRuns.id))
       .where(and(eq(dailySnapshots.userId, userId), eq(syncRuns.trigger, "scheduled")))
       .orderBy(desc(dailySnapshots.snapshotDate));
+
+    return rows.map((row, index) => {
+      const next = rows[index + 1];
+      const total = toNumber(row.total);
+      return {
+        ...row,
+        dailyChange: next ? total - toNumber(next.total) : toNumber(row.dailyChange),
+      };
+    });
   } catch {
     return [];
   }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -501,7 +501,7 @@ async function persistSnapshot(
   const previous = await db
     .select({ total: dailySnapshots.totalNetWorth })
     .from(dailySnapshots)
-    .where(eq(dailySnapshots.userId, userId))
+    .where(and(eq(dailySnapshots.userId, userId), lt(dailySnapshots.snapshotDate, dateKey)))
     .orderBy(desc(dailySnapshots.snapshotDate))
     .limit(1);
   const prevTotal = previous[0] ? Number(previous[0].total) : total;
