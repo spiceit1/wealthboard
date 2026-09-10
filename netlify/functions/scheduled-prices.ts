@@ -125,24 +125,7 @@ export default async (request: Request) => {
       });
     }
 
-    if (!existingDaily || !hasFreshCash) {
-      return json({
-        skipped: true,
-        reason: "Daily recovery sync is cooling down to avoid Plaid rate limits.",
-        nyDate,
-        hasFreshCash,
-        nextRecoveryAttemptInMinutes: Math.ceil(
-          Math.max(
-            0,
-            scheduledCooldownMs -
-              (latestScheduledRun ? Date.now() - latestScheduledRun.startedAt.getTime() : 0),
-          ) / 60000,
-        ),
-        nyWeekday: weekday,
-        nyHour: hour,
-        nyMinute: minute,
-      });
-    }
+    // Bank recovery cooldown must not suppress independent stock/crypto refreshes.
 
     // Run synchronously in scheduled functions; background promises are not reliable in serverless.
     const run = await runPriceOnlySync(userId, "system");

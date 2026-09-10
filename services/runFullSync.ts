@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { fetchStockPrices } from "@/services/stockQuotes";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -35,6 +37,7 @@ export type SyncRunResult = {
   status: "pending" | "running" | "completed" | "failed";
   events: SyncEvent[];
   summary: SyncSummary | null;
+  errorMessage?: string | null;
 };
 
 type SyncTrigger = "manual" | "scheduled" | "system";
@@ -45,7 +48,6 @@ const RUN_STALE_AFTER_MS = 20 * 60 * 1000;
 const PLAID_FETCH_TIMEOUT_MS = 25_000;
 const PLAID_FETCH_TIMEOUT_MS_SCHEDULED = 7_000;
 const COINGECKO_FETCH_TIMEOUT_MS = 20_000;
-const STOOQ_FETCH_TIMEOUT_MS = 6_000;
 const PROVIDER_RETRY_COUNT = 2;
 
 function nowIso() {
@@ -261,131 +263,13 @@ async function removeAutoStockHoldings(userId: string) {
     .where(and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.isManual, false)));
 }
 
-type StockQuote = { price: number; pricedAt: Date };
-
-function datePartsInTimeZone(value: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(value);
-  return {
-    year: Number(parts.find((part) => part.type === "year")?.value ?? "0"),
-    month: Number(parts.find((part) => part.type === "month")?.value ?? "0"),
-    day: Number(parts.find((part) => part.type === "day")?.value ?? "0"),
-    hour: Number(parts.find((part) => part.type === "hour")?.value ?? "0"),
-    minute: Number(parts.find((part) => part.type === "minute")?.value ?? "0"),
-    second: Number(parts.find((part) => part.type === "second")?.value ?? "0"),
-  };
-}
-
-function parseLocalTimeInZone(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  second: number,
-  timeZone: string,
-) {
-  // Convert local wall-clock time in `timeZone` to UTC Date.
-  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
-  for (let i = 0; i < 2; i += 1) {
-    const zoned = datePartsInTimeZone(new Date(utcMs), timeZone);
-    const desiredMs = Date.UTC(year, month - 1, day, hour, minute, second);
-    const zonedMs = Date.UTC(
-      zoned.year,
-      zoned.month - 1,
-      zoned.day,
-      zoned.hour,
-      zoned.minute,
-      zoned.second,
-    );
-    utcMs += desiredMs - zonedMs;
-  }
-  return new Date(utcMs);
-}
-
-async function fetchStockQuoteStooq(symbol: string): Promise<StockQuote | null> {
-  const normalized = symbol.trim().toLowerCase();
-  if (!normalized) return null;
-  const candidates = [`${normalized}.us`, normalized];
-  for (const ticker of candidates) {
-    const response = await withRetry(
-      async () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), STOOQ_FETCH_TIMEOUT_MS);
-        try {
-          return await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(ticker)}&i=d`, {
-            cache: "no-store",
-            signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-      PROVIDER_RETRY_COUNT,
-      250,
-    );
-    if (!response.ok) continue;
-    const csv = (await response.text()).trim();
-    const lines = csv.split(/\r?\n/).filter(Boolean);
-    if (!lines.length) continue;
-    // Stooq may return either header+row or only one data row.
-    const row = lines.length > 1 ? lines[1] : lines[0];
-    const columns = row.split(",");
-    // Stooq CSV columns: symbol,date,time,open,high,low,close,volume
-    // Use close/last trade price, not intraday high.
-    const close = Number(columns[6]);
-    const fallback = Number(columns[4]);
-    const price = Number.isFinite(close) && close > 0 ? close : fallback;
-    if (!Number.isFinite(price) || price <= 0) continue;
-    const dateRaw = (columns[1] ?? "").trim();
-    const timeRaw = (columns[2] ?? "").trim();
-    let pricedAt = new Date();
-    if (/^\d{8}$/.test(dateRaw) && /^\d{6}$/.test(timeRaw)) {
-      const year = Number(dateRaw.slice(0, 4));
-      const month = Number(dateRaw.slice(4, 6));
-      const day = Number(dateRaw.slice(6, 8));
-      const hour = Number(timeRaw.slice(0, 2));
-      const minute = Number(timeRaw.slice(2, 4));
-      const second = Number(timeRaw.slice(4, 6));
-      // Stooq timestamps are local to Europe/Warsaw trading calendar.
-      const parsed = parseLocalTimeInZone(year, month, day, hour, minute, second, "Europe/Warsaw");
-      if (Number.isFinite(parsed.getTime())) {
-        pricedAt = parsed;
-      }
-    }
-    return { price, pricedAt };
-  }
-  return null;
-}
-
-async function fetchStockPrices(symbols: string[]) {
-  const map = new Map<string, StockQuote>();
-  for (const symbol of symbols) {
-    try {
-      const quote = await fetchStockQuoteStooq(symbol);
-      if (quote) map.set(symbol.toUpperCase(), quote);
-    } catch {
-      // best-effort pricing only
-    }
-  }
-  return map;
-}
-
 async function refreshManualHoldingValuations(userId: string) {
   const manualRows = await db.query.holdings.findMany({
     where: and(eq(holdings.userId, userId), eq(holdings.isManual, true)),
   });
 
   if (!manualRows.length) {
-    return { stockSymbols: [] as string[], cryptoSymbols: [] as string[] };
+    return { stockSymbols: [] as string[], cryptoSymbols: [] as string[], updatedStockCount: 0, updatedCryptoCount: 0, failures: [] as string[] };
   }
 
   const stockSymbols = [...new Set(
@@ -395,19 +279,26 @@ async function refreshManualHoldingValuations(userId: string) {
     manualRows.filter((h) => h.assetClass === "crypto").map((h) => h.symbol.toUpperCase()),
   )];
 
-  const stockPriceMap = await fetchStockPrices(stockSymbols);
+  const { quotes: stockPriceMap, failures } = await fetchStockPrices(stockSymbols);
   const adapters = getProviderAdapters();
-  const cryptoPriceResult = await withRetry(
-    () =>
-      withTimeout(
-        adapters.coingecko.fetchPrices(cryptoSymbols),
-        COINGECKO_FETCH_TIMEOUT_MS,
-        "CoinGecko request timed out.",
-      ),
-    PROVIDER_RETRY_COUNT,
-    400,
-  );
-  const cryptoPriceMap = new Map(cryptoPriceResult.data.map((item) => [item.symbol.toUpperCase(), item.price]));
+  const cryptoPriceMap = new Map<string, number>();
+  if (cryptoSymbols.length) {
+    try {
+      const result = await withRetry(
+        () => withTimeout(adapters.coingecko.fetchPrices(cryptoSymbols), COINGECKO_FETCH_TIMEOUT_MS, "CoinGecko request timed out."),
+        PROVIDER_RETRY_COUNT,
+        400,
+      );
+      for (const item of result.data) {
+        if (Number.isFinite(item.price) && item.price > 0) cryptoPriceMap.set(item.symbol.toUpperCase(), item.price);
+      }
+      for (const symbol of cryptoSymbols) {
+        if (!cryptoPriceMap.has(symbol)) failures.push(`${symbol}: crypto quote unavailable`);
+      }
+    } catch {
+      failures.push(`Crypto quotes unavailable for ${cryptoSymbols.join(", ")}`);
+    }
+  }
 
   let updatedStockCount = 0;
   let updatedCryptoCount = 0;
@@ -466,7 +357,7 @@ async function refreshManualHoldingValuations(userId: string) {
       .where(eq(accounts.id, account.id));
   }
 
-  return { stockSymbols, cryptoSymbols, updatedStockCount, updatedCryptoCount };
+  return { stockSymbols, cryptoSymbols, updatedStockCount, updatedCryptoCount, failures };
 }
 
 async function persistSnapshot(
@@ -666,11 +557,15 @@ async function runPriceRefreshSteps(
       `Updated prices for ${result.updatedStockCount}/${result.stockSymbols.length} stock symbols and ${result.updatedCryptoCount}/${result.cryptoSymbols.length} crypto symbols`,
       "coingecko",
     );
+    if (result.failures.length) {
+      throw new Error(`Price refresh incomplete. Previous prices retained for: ${result.failures.join("; ")}`);
+    }
   } catch (error) {
     await pushEvent(
       `Manual holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       "coingecko",
     );
+    throw error;
   }
 }
 
@@ -1024,7 +919,9 @@ export async function triggerPriceOnlySyncInBackground(userId: string, trigger: 
   if (run.started) {
     const promise = executePriceOnlySync(run.runId, userId, trigger).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
-    void promise.finally(() => inFlightRuns.delete(run.runId));
+    after(async () => {
+      try { await promise; } finally { inFlightRuns.delete(run.runId); }
+    });
   }
   return run;
 }
@@ -1077,6 +974,7 @@ export async function getSyncRunProgress(runId: string, userId: string): Promise
   return {
     runId,
     status: run.status,
+    errorMessage: run.errorMessage,
     events: events.map((event) => ({
       timestamp: event.timestamp?.toISOString() ?? nowIso(),
       message: event.message,

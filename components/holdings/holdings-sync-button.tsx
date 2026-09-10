@@ -16,6 +16,7 @@ type SyncStartResponse = {
 type SyncProgressResponse = {
   status: "pending" | "running" | "completed" | "failed";
   events: Array<{ message: string }>;
+  errorMessage?: string | null;
 };
 
 export function HoldingsSyncButton() {
@@ -34,7 +35,7 @@ export function HoldingsSyncButton() {
         if (!response.ok) return;
         const data = (await response.json()) as SyncProgressResponse;
         const lastMessage = data.events[data.events.length - 1]?.message ?? null;
-        if (!cancelled) setStep(lastMessage);
+        if (!cancelled) setStep(data.status === "failed" ? (data.errorMessage ?? "Price refresh failed. Check Sync Logs for details.") : lastMessage);
 
         if (data.status === "completed" || data.status === "failed") {
           clearInterval(timer);
