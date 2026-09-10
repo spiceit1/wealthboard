@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
-import { generateSecret, generateURI, verify } from "otplib";
+import { generateSecret, generateURI } from "otplib";
+import { verifyAuthenticatorCode } from "@/lib/authenticator";
 import QRCode from "qrcode";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
@@ -10,6 +11,15 @@ import { getDemoUserId } from "@/services/dashboardData";
 import { encryptSecret, decryptSecret } from "@/lib/secrets";
 import { MFA_COOKIE, MFA_MAX_AGE, signMfaSession } from "@/lib/mfa-session";
 export async function POST(request: Request) {
+  try {
+    return await handleVerification(request);
+  } catch {
+    console.error("WealthBoard authenticator verification could not complete");
+    return NextResponse.json({ message: "Could not verify your authenticator. Please try again." }, { status: 500 });
+  }
+}
+
+async function handleVerification(request: Request) {
   const identity = await getIdentityOwner();
   if (!identity) return NextResponse.json({ message: "Sign in with the verified owner account first." }, { status: 401 });
   const userId = await getDemoUserId();
@@ -29,7 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ enrolled: false, qr: await QRCode.toDataURL(uri), secret }, { headers: { "Cache-Control": "no-store" } });
   }
   if (!/^\d{6}$/.test(body.code ?? "") || !user.mfaSecretEncrypted) return NextResponse.json({ message: "Enter your six-digit authenticator code." }, { status: 400 });
-  const result = await verify({ secret: decryptSecret(user.mfaSecretEncrypted), token: body.code, epochTolerance: 30, afterTimeStep: user.mfaLastStep });
+  const result = await verifyAuthenticatorCode(decryptSecret(user.mfaSecretEncrypted), body.code, user.mfaLastStep);
   if (!result.valid || !("timeStep" in result)) {
     await db.update(users).set({
       mfaFailures: sql`CASE WHEN ${users.mfaLockedUntil} < now() THEN 1 ELSE ${users.mfaFailures} + 1 END`,

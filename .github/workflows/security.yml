@@ -20,4 +20,5 @@ jobs:
       - run: node --import tsx tests/stock-quotes.ts
       - run: node --import tsx tests/manual-balance.ts
       - run: node --import tsx tests/mfa-session.ts
+      - run: node --import tsx tests/authenticator.ts
       - run: npm audit --omit=dev --audit-level=high
