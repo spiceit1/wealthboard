@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getDemoUserId } from "@/services/dashboardData";
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { upsertManualHolding } from "@/services/manualHoldings";
 
 const upsertSchema = z.object({
@@ -18,9 +18,9 @@ const removeSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const userId = await getDemoUserId();
+    const userId = await getAuthorizedUserId();
     if (!userId) {
-      return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+      return NextResponse.json({ message: "Sign in required." }, { status: 401 });
     }
     const body = upsertSchema.parse(await request.json());
     await upsertManualHolding({
@@ -41,9 +41,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const userId = await getDemoUserId();
+    const userId = await getAuthorizedUserId();
     if (!userId) {
-      return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+      return NextResponse.json({ message: "Sign in required." }, { status: 401 });
     }
     const body = removeSchema.parse(await request.json());
     await upsertManualHolding({

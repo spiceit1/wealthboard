@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "data_deletion_pending" boolean DEFAULT false NOT NULL;

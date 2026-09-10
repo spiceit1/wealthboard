@@ -1,3 +1,4 @@
+import { AuthGate } from "@/components/auth/auth-gate";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -30,10 +31,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <QueryProvider>
+          <AuthGate>
           <SyncLiveRefresh />
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </div>
+          </AuthGate>
         </QueryProvider>
       </body>
     </html>

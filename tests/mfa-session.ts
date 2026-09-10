@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { signMfaSession, validMfaSession, MFA_MAX_AGE } from '../lib/mfa-session';
+const key='test-only-signing-key';const time=1700000000000;const cookie=signMfaSession('owner',key,time);
+assert(validMfaSession(cookie,'owner',key,time));
+assert(!validMfaSession(cookie,'another',key,time));
+assert(!validMfaSession(cookie,'owner','wrong',time));
+assert(!validMfaSession(cookie+'x','owner',key,time));
+assert(!validMfaSession(cookie,'owner',key,time+MFA_MAX_AGE*1000+1));
+assert(!validMfaSession(undefined,'owner',key,time));
+console.log('MFA cookie tampering, owner binding, and expiry tests passed.');

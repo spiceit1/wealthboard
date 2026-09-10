@@ -1,0 +1,23 @@
+name: Security checks
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 12 * * 1'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: node --import tsx tests/stock-quotes.ts
+      - run: node --import tsx tests/manual-balance.ts
+      - run: node --import tsx tests/mfa-session.ts
+      - run: npm audit --omit=dev --audit-level=high

@@ -502,6 +502,7 @@ export async function getAccountsOverview(userId: string) {
         type: accounts.type,
         currency: accounts.currency,
         balance: accounts.lastBalance,
+        balanceSource: accounts.balanceSource,
         balanceAsOf: accounts.balanceAsOf,
       })
       .from(accounts)
@@ -617,6 +618,7 @@ export async function getConnectionsOverview(userId: string) {
       .select({
         id: connections.id,
         provider: connections.provider,
+        externalId: connections.externalId,
         displayName: connections.displayName,
         status: connections.status,
         lastSyncedAt: connections.lastSyncedAt,

@@ -13,6 +13,7 @@ import {
   snapshotItems,
   syncRunEvents,
   syncRuns,
+  users,
 } from "@/db/schema";
 import { env } from "@/lib/env";
 import { getProviderAdapterModes, getProviderAdapters } from "@/providers/adapters";
@@ -231,6 +232,7 @@ async function upsertCashAccounts(userId: string, data: AccountBalance[]) {
           type: account.type,
           currency: account.currency,
           lastBalance: toMoney(account.balance),
+          balanceSource: "plaid",
           balanceAsOf: new Date(),
           updatedAt: new Date(),
         },
@@ -880,16 +882,16 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
 
   }
 
-  const [created] = await db
-    .insert(syncRuns)
-    .values({
-      userId,
-      status: "running",
-      trigger,
-      isMock: env.MOCK_MODE,
-      startedAt: new Date(),
-    })
-    .returning();
+  // Lock the user row while admitting a run so deletion can prevent new writers.
+  const admitted = await db.execute(sql`
+    INSERT INTO sync_runs (user_id, status, trigger, is_mock, started_at)
+    SELECT id, 'running', ${trigger}::sync_trigger, ${env.MOCK_MODE}, now()
+    FROM users WHERE id = ${userId} AND NOT data_deletion_pending
+    FOR SHARE
+    RETURNING id, status
+  `);
+  const created = admitted.rows[0] as { id: string; status: SyncStatus } | undefined;
+  if (!created) return { runId: "", status: "failed" as SyncStatus, started: false, skipped: true, skipReason: "Financial data deletion is in progress." };
 
   return { runId: created.id, status: created.status as SyncStatus, started: true };
 }
@@ -909,7 +911,7 @@ export async function triggerSyncInBackground(userId: string, trigger: SyncTrigg
   if (run.started) {
     const promise = executeFullSync(run.runId, userId, trigger).then(() => undefined);
     inFlightRuns.set(run.runId, promise);
-    void promise.finally(() => inFlightRuns.delete(run.runId));
+    after(async () => { try { await promise; } finally { inFlightRuns.delete(run.runId); } });
   }
   return run;
 }

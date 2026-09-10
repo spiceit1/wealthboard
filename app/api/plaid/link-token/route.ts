@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getPlaidClient, getPlaidClientName, getPlaidCountryCodes, getPlaidProducts } from "@/lib/plaid";
-import { getDemoUserId } from "@/services/dashboardData";
+import { getAuthorizedUserId } from "@/lib/owner-auth";
+import { getPlaidAccessTokensForUser } from "@/services/plaidTokens";
 
 const requestSchema = z
   .object({
     redirectUri: z.string().url().optional(),
+    itemId: z.string().optional(),
   })
   .optional();
 
@@ -24,21 +26,23 @@ type PlaidApiError = {
 
 export async function POST(request: Request) {
   try {
-    const userId = await getDemoUserId();
+    const userId = await getAuthorizedUserId();
     if (!userId) {
-      return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+      return NextResponse.json({ message: "Sign in required." }, { status: 401 });
     }
 
     const payload = requestSchema.parse(await request.json().catch(() => ({})));
     const plaid = getPlaidClient();
+    const linked = payload?.itemId ? (await getPlaidAccessTokensForUser(userId)).find(item => item.itemId === payload.itemId) : null;
+    if (payload?.itemId && !linked) return NextResponse.json({ message: "Bank connection not found." }, { status: 404 });
 
     const createResponse = await plaid.linkTokenCreate({
       client_name: getPlaidClientName(),
       language: "en",
       country_codes: getPlaidCountryCodes(),
       user: { client_user_id: userId },
-      products: getPlaidProducts(),
-      redirect_uri: payload?.redirectUri,
+      ...(linked ? { access_token: linked.accessToken } : { products: getPlaidProducts() }),
+      redirect_uri: new URL("/connections", process.env.APP_URL!).toString(),
     });
 
     return NextResponse.json(

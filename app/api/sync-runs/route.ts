@@ -1,11 +1,12 @@
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { NextResponse } from "next/server";
 
-import { getDemoUserId, getSyncRuns } from "@/services/dashboardData";
+import { getSyncRuns } from "@/services/dashboardData";
 
 export async function GET(request: Request) {
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
   if (!userId) {
-    return NextResponse.json({ runs: [], total: 0, page: 1, pageSize: 25 }, { status: 200 });
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);

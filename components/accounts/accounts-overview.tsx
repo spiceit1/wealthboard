@@ -1,5 +1,7 @@
 "use client";
 
+import { ManualBalanceEditor } from "@/components/accounts/manual-balance-editor";
+
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -13,6 +15,7 @@ type AccountRow = {
   name: string;
   type: string;
   balance: number;
+  balanceSource: string;
   balanceAsOf: string | null;
 };
 
@@ -110,6 +113,7 @@ export function AccountsOverview() {
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Balance</th>
                   <th className="py-2 pr-4">As Of</th>
+                  <th className="py-2 pr-4">Update</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,13 +122,14 @@ export function AccountsOverview() {
                     <td className="py-2 pr-4">{row.institutionName}</td>
                     <td className="py-2 pr-4">{row.name}</td>
                     <td className="py-2 pr-4 capitalize">{row.type.replace("_", " ")}</td>
-                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.balance)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.balance)}{row.balanceSource === "manual" && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Manual</span>}</td>
                     <td className="py-2 pr-4">{formatDateTimeEastern(row.balanceAsOf)}</td>
+                    <td className="py-2 pr-4"><ManualBalanceEditor accountId={row.id} name={row.name} balance={row.balance} /></td>
                   </tr>
                 ))}
                 {!bankRows.length && (
                   <tr className="wb-table-row">
-                    <td className="py-3 text-muted-foreground" colSpan={5}>
+                    <td className="py-3 text-muted-foreground" colSpan={6}>
                       No bank accounts found.
                     </td>
                   </tr>

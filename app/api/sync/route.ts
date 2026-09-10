@@ -1,12 +1,13 @@
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { NextResponse } from "next/server";
 
-import { getDemoUserId } from "@/services/dashboardData";
+
 import { getSyncRunProgress, triggerSyncInBackground } from "@/services/runFullSync";
 
 export async function GET(request: Request) {
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
   if (!userId) {
-    return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -20,9 +21,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST() {
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
   if (!userId) {
-    return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const run = await triggerSyncInBackground(userId, "manual");

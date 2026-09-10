@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getPlaidClient } from "@/lib/plaid";
-import { getDemoUserId } from "@/services/dashboardData";
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { savePlaidAccessToken } from "@/services/plaidTokens";
 
 const exchangeSchema = z.object({
@@ -21,9 +21,9 @@ const exchangeSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const userId = await getDemoUserId();
+    const userId = await getAuthorizedUserId();
     if (!userId) {
-      return NextResponse.json({ message: "Demo user not found." }, { status: 404 });
+      return NextResponse.json({ message: "Sign in required." }, { status: 401 });
     }
 
     const body = exchangeSchema.parse(await request.json());

@@ -1,24 +1,14 @@
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
-import { getDashboardData, getDemoUserId } from "@/services/dashboardData";
+import { getDashboardData } from "@/services/dashboardData";
 
 export async function GET() {
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
 
   if (!userId) {
-    return NextResponse.json(
-      {
-        summary: null,
-        history: [],
-        intradayHistory: [],
-        latestIntradaySyncAt: null,
-        latestSync: null,
-        events: [],
-        mockMode: env.MOCK_MODE,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const data = await getDashboardData(userId);

@@ -1,6 +1,7 @@
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { NextResponse } from "next/server";
 
-import { getDemoUserId, getSnapshotDetail } from "@/services/dashboardData";
+import { getSnapshotDetail } from "@/services/dashboardData";
 
 type Params = {
   params: Promise<{ date: string }>;
@@ -8,9 +9,9 @@ type Params = {
 
 export async function GET(_: Request, { params }: Params) {
   const { date } = await params;
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
   if (!userId) {
-    return NextResponse.json({ detail: null }, { status: 200 });
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const detail = await getSnapshotDetail(userId, date);

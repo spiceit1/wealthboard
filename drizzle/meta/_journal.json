@@ -15,6 +15,34 @@
       "when": 1773256000000,
       "tag": "0001_plaid_items",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773257000000,
+      "tag": "0002_intraday_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789062000000,
+      "tag": "0003_manual_balance_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789062693315,
+      "tag": "0004_exotic_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789063018076,
+      "tag": "0005_fearless_violations",
+      "breakpoints": true
     }
   ]
 }

@@ -1,20 +1,12 @@
+import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { NextResponse } from "next/server";
 
-import { getDemoUserId, getHoldingsOverview } from "@/services/dashboardData";
+import { getHoldingsOverview } from "@/services/dashboardData";
 
 export async function GET() {
-  const userId = await getDemoUserId();
+  const userId = await getAuthorizedUserId();
   if (!userId) {
-    return NextResponse.json(
-      {
-        rows: [],
-        stocksChangeSinceOpen: null,
-        cryptoChangeSinceOpen: null,
-        changeSinceLabel: null,
-        latestSyncAt: null,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ message: "Sign in required." }, { status: 401 });
   }
 
   const data = await getHoldingsOverview(userId);

@@ -27,6 +27,7 @@ type ConnectionRow = {
   id: string;
   provider: "plaid" | "snaptrade" | "coingecko";
   displayName: string;
+  externalId?: string;
   status: "active" | "inactive" | "error";
   lastSyncedAt: string | null;
 };
@@ -219,6 +220,7 @@ export function ConnectionsOverview() {
                           <span className="text-muted-foreground">
                             ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
                           </span>
+                          {item.externalId && <PlaidConnectButton itemId={item.externalId} />}
                         </li>
                       ))}
                     </ul>
