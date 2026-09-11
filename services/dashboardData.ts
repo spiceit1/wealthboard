@@ -118,7 +118,7 @@ export async function getDashboardData(userId: string) {
   try {
     const [cashAccounts, stockHoldings, cryptoHoldings] = await Promise.all([
       db.query.accounts.findMany({
-        where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+        where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
       }),
       db.query.holdings.findMany({
         where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
@@ -506,7 +506,7 @@ export async function getAccountsOverview(userId: string) {
         balanceAsOf: accounts.balanceAsOf,
       })
       .from(accounts)
-      .where(eq(accounts.userId, userId))
+      .where(and(eq(accounts.userId, userId), eq(accounts.includedInTotals, true)))
       .orderBy(asc(accounts.type), asc(accounts.name));
 
     return rows.map((row) => ({

@@ -34,7 +34,7 @@ export async function PATCH(request: Request) {
       balanceAsOf: new Date(),
       updatedAt: new Date(),
       balanceSource: "manual",
-    }).where(and(eq(accounts.userId, userId), eq(accounts.id, parsed.data.accountId), inArray(accounts.type, ["checking", "savings"])))
+    }).where(and(eq(accounts.userId, userId), eq(accounts.id, parsed.data.accountId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)))
       .returning({ id: accounts.id });
     if (!saved) return NextResponse.json({ message: "Bank account not found." }, { status: 404 });
     return NextResponse.json({ status: "ok" });

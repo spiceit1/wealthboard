@@ -115,7 +115,7 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
 
   const buttonLabel = useMemo(() => {
     if (loading) return "Connecting...";
-    return itemId ? "Reconnect" : "Connect Plaid";
+    return itemId ? "Reconnect" : "Connect another institution with Plaid";
   }, [loading, itemId]);
 
   const beginLinkFlow = async () => {

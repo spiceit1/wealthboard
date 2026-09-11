@@ -168,7 +168,7 @@ async function prunePlaidAccountsNotInFetch(
 /** Same bank account relinked via a new Plaid Item gets a new account_id — drops duplicate display rows. */
 async function dedupeCashAccountsByDisplayKey(userId: string, winningProviderIds: Set<string>) {
   const rows = await db.query.accounts.findMany({
-    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
   });
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -369,7 +369,7 @@ async function persistSnapshot(
 ): Promise<SyncSummary | null> {
   const persistDailySnapshot = options?.persistDailySnapshot ?? true;
   const cashRows = await db.query.accounts.findMany({
-    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+    where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
   });
   const stockRows = await db.query.holdings.findMany({
     where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
@@ -846,7 +846,7 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
     if (alreadyRanToday) {
       if (alreadyRanToday.status === "completed") {
         const cashRows = await db.query.accounts.findMany({
-          where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"])),
+          where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
         });
         const latestCashAsOf = cashRows
           .map((row) => row.balanceAsOf)

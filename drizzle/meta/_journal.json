@@ -43,6 +43,13 @@
       "when": 1789063018076,
       "tag": "0005_fearless_violations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789156580073,
+      "tag": "0006_exclude_superseded_accounts",
+      "breakpoints": true
     }
   ]
 }

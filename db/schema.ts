@@ -137,6 +137,7 @@ export const accounts = pgTable(
     lastBalance: numeric("last_balance", { precision: 16, scale: 2 }).notNull().default("0"),
     balanceAsOf: timestamp("balance_as_of", { withTimezone: true }),
     balanceSource: varchar("balance_source", { length: 16 }).notNull().default("plaid"),
+    includedInTotals: boolean("included_in_totals").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
