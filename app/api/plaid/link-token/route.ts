@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getPlaidClient, getPlaidClientName, getPlaidCountryCodes, getPlaidProducts } from "@/lib/plaid";
 import { getAuthorizedUserId } from "@/lib/owner-auth";
+import { getPlaidRedirectUri } from "@/lib/plaid-redirect";
 import { getPlaidAccessTokensForUser } from "@/services/plaidTokens";
 
 const requestSchema = z
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
       country_codes: getPlaidCountryCodes(),
       user: { client_user_id: userId },
       ...(linked ? { access_token: linked.accessToken } : { products: getPlaidProducts() }),
-      redirect_uri: new URL("/connections", process.env.APP_URL!).toString(),
+      redirect_uri: getPlaidRedirectUri(),
     });
 
     return NextResponse.json(

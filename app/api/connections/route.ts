@@ -1,5 +1,5 @@
 import { getAuthorizedUserId } from "@/lib/owner-auth";
-import { headers } from "next/headers";
+import { getPlaidRedirectUri } from "@/lib/plaid-redirect";
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
@@ -33,17 +33,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Pr
 }
 
 export async function GET() {
-  const headerList = await headers();
-  const forwardedHost = headerList.get("x-forwarded-host");
-  const host = forwardedHost ?? headerList.get("host");
-  const proto = headerList.get("x-forwarded-proto") ?? "https";
-  const requestOrigin = host && !host.includes("localhost") ? `${proto}://${host}` : null;
-  const oauthRedirectExample = requestOrigin
-    ? `${requestOrigin}/connections`
-    : `${env.APP_URL.replace(/\/$/, "")}/connections`;
-
   const userId = await withTimeout(getAuthorizedUserId(), 4_000, null);
   if (!userId) return NextResponse.json({message:"Sign in required."},{status:401});
+  let oauthRedirectExample: string | null = null;
+  try { oauthRedirectExample = getPlaidRedirectUri(); } catch { /* Link creation reports the configuration error. */ }
   const rows = userId ? await withTimeout(getConnectionsOverview(userId), 4_000, []) : [];
   const adapterModes = getProviderAdapterModes();
   const plaidKeysPresent = Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
@@ -60,4 +53,3 @@ export async function GET() {
     { status: 200 },
   );
 }
-
