@@ -9,7 +9,7 @@ import { users } from "@/db/schema";
 import { getIdentityOwner } from "@/lib/owner-auth";
 import { getDemoUserId } from "@/services/dashboardData";
 import { encryptSecret, decryptSecret } from "@/lib/secrets";
-import { MFA_COOKIE, MFA_MAX_AGE, signMfaSession } from "@/lib/mfa-session";
+import { MFA_COOKIE, MFA_MAX_AGE, MFA_REMEMBER_MAX_AGE, signMfaSession } from "@/lib/mfa-session";
 export async function POST(request: Request) {
   try {
     return await handleVerification(request);
@@ -53,7 +53,8 @@ async function handleVerification(request: Request) {
   if (!saved) return NextResponse.json({ message: "Code already used. Wait for a new code." }, { status: 401 });
   const key = process.env.INTERNAL_SYNC_TOKEN;
   if (!key) return NextResponse.json({ message: "Security configuration missing." }, { status: 503 });
-  (await cookies()).set(MFA_COOKIE, signMfaSession(identity.id, key), { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: MFA_MAX_AGE });
+  const rememberDevice = body.rememberDevice === true;
+  (await cookies()).set(MFA_COOKIE, signMfaSession(identity.id, key, Date.now(), rememberDevice), { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: rememberDevice ? MFA_REMEMBER_MAX_AGE : MFA_MAX_AGE });
   console.info("WealthBoard MFA verification succeeded");
   return NextResponse.json({ status: "ok" });
 }

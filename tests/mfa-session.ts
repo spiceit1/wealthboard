@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { signMfaSession, validMfaSession, MFA_MAX_AGE } from '../lib/mfa-session';
+import { signMfaSession, validMfaSession, MFA_MAX_AGE, MFA_REMEMBER_MAX_AGE, mfaSessionExpiresAt } from '../lib/mfa-session';
 const key='test-only-signing-key';const time=1700000000000;const cookie=signMfaSession('owner',key,time);
 assert(validMfaSession(cookie,'owner',key,time));
 assert(!validMfaSession(cookie,'another',key,time));
@@ -8,3 +8,14 @@ assert(!validMfaSession(cookie+'x','owner',key,time));
 assert(!validMfaSession(cookie,'owner',key,time+MFA_MAX_AGE*1000+1));
 assert(!validMfaSession(undefined,'owner',key,time));
 console.log('MFA cookie tampering, owner binding, and expiry tests passed.');
+
+const remembered = signMfaSession('owner', key, time, true);
+assert(validMfaSession(remembered, 'owner', key, time + 24 * 60 * 60 * 1000));
+assert(validMfaSession(remembered, 'owner', key, time + MFA_REMEMBER_MAX_AGE * 1000 - 1));
+assert(!validMfaSession(remembered, 'owner', key, time + MFA_REMEMBER_MAX_AGE * 1000));
+assert(!validMfaSession(remembered, 'another', key, time));
+assert.equal(mfaSessionExpiresAt(remembered, 'owner', key, time + 1000), time + MFA_REMEMBER_MAX_AGE * 1000);
+const [payload, signature] = cookie.split('.');
+const extended = Buffer.from(JSON.stringify({...JSON.parse(Buffer.from(payload, 'base64url').toString()), expires: time + MFA_REMEMBER_MAX_AGE * 1000})).toString('base64url');
+assert(!validMfaSession(extended + '.' + signature, 'owner', key, time));
+console.log('Remembered-device duration and signed-expiry checks passed.');

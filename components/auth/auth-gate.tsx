@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { acceptInvite, handleAuthCallback, login, logout, requestPasswordRecovery, signup, updateUser } from "@netlify/identity";
+import { acceptInvite, getUser, refreshSession, onAuthChange, handleAuthCallback, login, logout, requestPasswordRecovery, signup, updateUser } from "@netlify/identity";
 import { Button } from "@/components/ui/button";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
@@ -10,12 +10,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [invite, setInvite] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [setupKey, setSetupKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   async function check() {
+    await refreshSession();
+    await getUser();
     const response = await fetch("/api/auth/session", { cache: "no-store" });
     if (!response.ok) throw new Error("Unable to check sign-in status.");
     const session = await response.json();
@@ -28,6 +31,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     setQr(data.qr ?? null); setSetupKey(data.secret ?? null);
   }
   useEffect(() => {
+    const unsubscribe = onAuthChange(event => {
+      if (event === "token_refresh") {
+        void fetch("/api/auth/session", { cache: "no-store" }).catch(() => {});
+      }
+    });
     (async () => {
       try {
         const result = await handleAuthCallback();
@@ -36,6 +44,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         await check();
       } catch (error) { setMessage(error instanceof Error ? error.message : "Sign-in unavailable."); setState("login"); }
     })();
+    return unsubscribe;
   }, []);
   async function perform(action: () => Promise<void>) {
     setBusy(true); setMessage("");
@@ -56,11 +65,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <p className="text-xs text-muted-foreground">For first-time setup, use your approved owner email and a password of at least 8 characters.</p>
     </form>}
     {state === "password" && <form className="space-y-3" onSubmit={e=>{e.preventDefault();perform(async()=>{if(invite) await acceptInvite(invite,password);else await updateUser({password});await check();});}}><label>New password<input type="password" autoComplete="new-password" className="w-full rounded border p-2" minLength={8} value={password} onChange={e=>setPassword(e.target.value)} required /></label><Button disabled={busy}>Save password</Button></form>}
-    {state === "mfa" && <form className="space-y-3" onSubmit={e=>{e.preventDefault();perform(async()=>{const r=await fetch("/api/auth/mfa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code})});const d=await r.json();if(!r.ok)throw new Error(d.message);setQr(null);setSetupKey(null);await check();});}}>
+    {state === "mfa" && <form className="space-y-3" onSubmit={e=>{e.preventDefault();perform(async()=>{const r=await fetch("/api/auth/mfa",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code, rememberDevice})});const d=await r.json();if(!r.ok)throw new Error(d.message);setQr(null);setSetupKey(null);await check();});}}>
       <h2 className="font-semibold">{qr ? "Set up your authenticator" : "Verify your identity"}</h2>
       {qr && <><p className="text-sm">Scan this with your authenticator app, then enter its six-digit code. Keep your authenticator backup in a safe place.</p>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={qr} alt="Authenticator setup QR code" width={220} height={220}/><details><summary>Enter setup key manually</summary><code className="break-all text-xs">{setupKey}</code></details></>}
       <label className="block">Authenticator code<input className="mt-1 w-full rounded border p-2" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e=>setCode(e.target.value)} required /></label><Button disabled={busy}>Verify</Button>
-      <p className="text-xs text-muted-foreground">Verification lasts up to eight hours. Sign out when you finish.</p>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} />Remember this device for 30 days</label>
+      <p className="text-xs text-muted-foreground">Use this only on your own device. Otherwise, verification lasts eight hours. Signing out ends remembered access.</p>
     </form>}
     {message && <p role="status" className="text-sm">{message}</p>}
     <div className="flex gap-4 text-xs underline"><a href="/privacy">Privacy</a><a href="/security">Security</a></div>
