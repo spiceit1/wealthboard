@@ -16,6 +16,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Check runtime and framework support lifecycle
+        run: node scripts/check-software-lifecycle.mjs
       - run: npm run typecheck
       - run: node --import tsx tests/stock-quotes.ts
       - run: node --import tsx tests/manual-balance.ts

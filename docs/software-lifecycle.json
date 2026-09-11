@@ -1,0 +1,12 @@
+{
+  "reviewedOn": "2026-09-11",
+  "reviewBy": "2026-10-01",
+  "next": {
+    "major": "15",
+    "supportEnds": "2026-10-21",
+    "source": "https://nextjs.org/support-policy",
+    "basis": "Two years of maintenance support from the October 21, 2024 release. Plan an upgrade before this date."
+  },
+  "nodeSource": "https://github.com/nodejs/Release/blob/main/schedule.json",
+  "scope": "Application framework and the runtime executing this check. Provider-managed systems and owner devices require separate inventory reviews."
+}
