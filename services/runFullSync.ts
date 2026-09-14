@@ -1,3 +1,4 @@
+import { hasFreshCashAsOfNyDay } from '../lib/bank-sync';
 import { after } from "next/server";
 import { fetchStockPrices } from "@/services/stockQuotes";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
@@ -47,7 +48,8 @@ type SyncStatus = "pending" | "running" | "completed" | "failed";
 const inFlightRuns = new Map<string, Promise<void>>();
 const RUN_STALE_AFTER_MS = 20 * 60 * 1000;
 const PLAID_FETCH_TIMEOUT_MS = 25_000;
-const PLAID_FETCH_TIMEOUT_MS_SCHEDULED = 7_000;
+// Scheduled full syncs run in the 15-minute background worker.
+const PLAID_FETCH_TIMEOUT_MS_SCHEDULED = 120_000;
 const COINGECKO_FETCH_TIMEOUT_MS = 20_000;
 const PROVIDER_RETRY_COUNT = 2;
 
@@ -579,6 +581,7 @@ async function executeFullSync(
   const events: SyncEvent[] = [];
   let order = 1;
   let summary: SyncSummary | null = null;
+  let bankError: string | null = null;
   const adapters = getProviderAdapters();
   const adapterModes = getProviderAdapterModes();
 
@@ -596,17 +599,15 @@ async function executeFullSync(
   try {
     try {
       await pushEvent("Fetching Plaid bank balances", "plaid");
-      const plaidTimeoutMs =
-        trigger === "scheduled" ? PLAID_FETCH_TIMEOUT_MS_SCHEDULED : PLAID_FETCH_TIMEOUT_MS;
-      const plaidAttempts = trigger === "scheduled" ? 1 : PROVIDER_RETRY_COUNT;
+
       const plaid = await withRetry(
         () =>
           withTimeout(
             adapters.plaid.fetchBalances(userId),
-            plaidTimeoutMs,
+            trigger === "scheduled" ? PLAID_FETCH_TIMEOUT_MS_SCHEDULED : PLAID_FETCH_TIMEOUT_MS,
             "Plaid balance fetch timed out.",
           ),
-        plaidAttempts,
+        PROVIDER_RETRY_COUNT,
         600,
       );
       await removeLegacyMockInstitutionAccounts(userId);
@@ -634,6 +635,7 @@ async function executeFullSync(
         await pushEvent(`Saved ${account.name} balance`, "plaid");
       }
     } catch (error) {
+      bankError = `Bank balances were not updated: ${error instanceof Error ? error.message : "Unknown Plaid error"}`;
       if (isPlaidRateLimitError(error)) {
         await pushEvent(
           "Plaid rate limited (429). Bank balances will retry on the next scheduled recovery window.",
@@ -670,16 +672,16 @@ async function executeFullSync(
     await db
       .update(syncRuns)
       .set({
-        status: "completed",
+        status: bankError ? "failed" : "completed",
         completedAt: new Date(),
-        errorMessage: null,
+        errorMessage: bankError,
       })
       .where(eq(syncRuns.id, syncRunId));
-    await pushEvent("Sync complete");
+    await pushEvent(bankError ? "Sync incomplete: bank balances were not updated. Previous balances retained." : "Sync complete");
 
     return {
       runId: syncRunId,
-      status: "completed",
+      status: bankError ? "failed" : "completed",
       events,
       summary,
     };
@@ -848,13 +850,7 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
         const cashRows = await db.query.accounts.findMany({
           where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
         });
-        const latestCashAsOf = cashRows
-          .map((row) => row.balanceAsOf)
-          .filter((value): value is Date => value instanceof Date)
-          .sort((a, b) => b.getTime() - a.getTime())[0];
-        const hasFreshCashForNyDay = latestCashAsOf
-          ? getNyDateKey(latestCashAsOf) === nyToday
-          : false;
+        const hasFreshCashForNyDay = hasFreshCashAsOfNyDay(cashRows.map((row) => row.balanceAsOf), nyToday);
 
         // Recovery mode: allow another scheduled run later the same day if
         // cash balances are still stale for today (e.g., Plaid failed at 9 AM).

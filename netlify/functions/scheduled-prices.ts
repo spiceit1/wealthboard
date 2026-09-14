@@ -1,8 +1,9 @@
+import { dispatchBankSync, hasFreshCashAsOfNyDay } from "../../lib/bank-sync";
 import { getDemoUserId } from "../../services/dashboardData";
 import { db } from "../../db/client";
 import { accounts, dailySnapshots, syncRuns } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { runFullSync, runPriceOnlySync } from "../../services/runFullSync";
+import { runPriceOnlySync } from "../../services/runFullSync";
 
 export const config = {
   /**
@@ -54,14 +55,6 @@ function getNyDateKey(value = new Date()) {
   }).format(value);
 }
 
-function hasFreshCashAsOfNyDay(values: Array<Date | null>, nyDate: string) {
-  const latest = values
-    .filter((value): value is Date => value instanceof Date)
-    .sort((a, b) => b.getTime() - a.getTime())[0];
-  if (!latest) return false;
-  return getNyDateKey(latest) === nyDate;
-}
-
 export default async (request: Request) => {
   try {
     const force = new URL(request.url).searchParams.get("force") === "1";
@@ -89,10 +82,10 @@ export default async (request: Request) => {
       where: and(eq(dailySnapshots.userId, userId), eq(dailySnapshots.snapshotDate, nyDate)),
     });
     const cashRows = await db.query.accounts.findMany({
-      where: and(eq(accounts.userId, userId), eq(accounts.type, "checking")),
+      where: and(eq(accounts.userId, userId), eq(accounts.type, "checking"), eq(accounts.includedInTotals, true)),
     });
     const savingsRows = await db.query.accounts.findMany({
-      where: and(eq(accounts.userId, userId), eq(accounts.type, "savings")),
+      where: and(eq(accounts.userId, userId), eq(accounts.type, "savings"), eq(accounts.includedInTotals, true)),
     });
     const hasFreshCash = hasFreshCashAsOfNyDay(
       [...cashRows.map((row) => row.balanceAsOf), ...savingsRows.map((row) => row.balanceAsOf)],
@@ -112,7 +105,7 @@ export default async (request: Request) => {
     // during the intraday schedule window until daily snapshot is written.
     // Also retry if snapshot exists but Plaid cash balances are still stale.
     if ((!existingDaily || !hasFreshCash) && !withinRecoveryCooldown) {
-      const run = await runFullSync(userId, "scheduled");
+      const run = await dispatchBankSync({ URL: Netlify.env.get("URL"), APP_URL: Netlify.env.get("APP_URL"), INTERNAL_SYNC_TOKEN: Netlify.env.get("INTERNAL_SYNC_TOKEN") });
       return json({
         ...run,
         scheduled: true,

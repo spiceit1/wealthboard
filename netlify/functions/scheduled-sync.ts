@@ -1,5 +1,4 @@
-import { getDemoUserId } from "../../services/dashboardData";
-import { runFullSync } from "../../services/runFullSync";
+import { dispatchBankSync } from "../../lib/bank-sync";
 
 export const config = {
   /**
@@ -37,12 +36,7 @@ export default async (request: Request) => {
       });
     }
 
-    const userId = await getDemoUserId();
-    if (!userId) {
-      return json({ message: "Demo user not found." }, 404);
-    }
-
-    const result = await runFullSync(userId, "scheduled");
+    const result = await dispatchBankSync({ URL: Netlify.env.get("URL"), APP_URL: Netlify.env.get("APP_URL"), INTERNAL_SYNC_TOKEN: Netlify.env.get("INTERNAL_SYNC_TOKEN") });
     return json(result);
   } catch (error) {
     return json(

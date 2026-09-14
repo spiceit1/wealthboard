@@ -24,4 +24,5 @@ jobs:
       - run: node --import tsx tests/mfa-session.ts
       - run: node --import tsx tests/authenticator.ts
       - run: node --import tsx tests/plaid-redirect.ts
+      - run: node --import tsx tests/bank-sync.ts
       - run: npm audit --omit=dev --audit-level=high
