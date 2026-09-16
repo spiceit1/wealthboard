@@ -72,7 +72,7 @@ export function PositionsTable({ rows }: Props) {
   const startEdit = (row: Row) => {
     if (!row.isManual || (row.assetClass !== "stock" && row.assetClass !== "crypto")) return;
     setEditingId(row.id);
-    setDraftQty(row.quantity.toLocaleString("en-US", { maximumFractionDigits: 8 }));
+    setDraftQty(String(row.quantity));
     setError(null);
   };
 
@@ -138,11 +138,14 @@ export function PositionsTable({ rows }: Props) {
                 Value
               </th>
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Latest Sync
+                Price as of
               </th>
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Actions
+                Quantity synced
               </th>
+              {tableRows.some(row => row.isManual) && <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Actions
+              </th>}
             </tr>
           </thead>
           <tbody>
@@ -166,7 +169,10 @@ export function PositionsTable({ rows }: Props) {
                 <td className="py-2 pr-4 text-xs text-muted-foreground">
                   {formatDateTimeEastern(row.updatedAt, "Never")}
                 </td>
-                <td className="py-2 pr-4">
+                <td className="py-2 pr-4 text-xs text-muted-foreground">
+                  {row.isManual ? "Entered manually" : formatDateTimeEastern(row.quantitySyncedAt, "Not yet synced")}
+                </td>
+                {tableRows.some(item => item.isManual) && <td className="py-2 pr-4">
                   {row.isManual && (row.assetClass === "stock" || row.assetClass === "crypto") ? (
                     <div className="flex gap-2">
                       {editingId === row.id ? (
@@ -219,14 +225,14 @@ export function PositionsTable({ rows }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Quantity from Plaid{row.quantitySyncedAt ? ` · ${formatDateTimeEastern(row.quantitySyncedAt, "Never")}` : ""}</span>
+                    <span className="text-xs text-muted-foreground">Managed by Plaid</span>
                   )}
-                </td>
+                </td>}
               </tr>
             ))}
             {!tableRows.length && (
               <tr className="wb-table-row">
-                <td className="py-3 text-muted-foreground" colSpan={7}>
+                <td className="py-3 text-muted-foreground" colSpan={tableRows.some(row => row.isManual) ? 7 : 6}>
                   No {title.toLowerCase()} found.
                 </td>
               </tr>
@@ -240,6 +246,9 @@ export function PositionsTable({ rows }: Props) {
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-muted-foreground">
+        Price as of is the time of the market quote, which may be delayed. Quantity synced is when your share count was imported from Plaid. All times are Eastern.
+      </p>
       {renderTable("Stocks", stockRows)}
       {renderTable("Crypto", cryptoRows)}
     </div>
