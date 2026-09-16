@@ -57,6 +57,13 @@
       "when": 1789566298918,
       "tag": "0007_plaid_investment_holdings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789568549269,
+      "tag": "0008_yummy_black_bolt",
+      "breakpoints": true
     }
   ]
 }

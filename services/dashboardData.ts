@@ -625,6 +625,7 @@ export async function getConnectionsOverview(userId: string) {
         status: connections.status,
         lastSyncedAt: connections.lastSyncedAt,
         investmentsEnabled: plaidItems.investmentsEnabled,
+        creditEnabled: plaidItems.creditEnabled,
         holdingsSyncedAt: plaidItems.holdingsSyncedAt,
       })
       .from(connections)

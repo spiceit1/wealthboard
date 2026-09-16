@@ -29,6 +29,7 @@ type ConnectionRow = {
   provider: "plaid" | "snaptrade" | "coingecko";
   displayName: string;
   externalId?: string;
+  creditEnabled?: boolean | null;
   investmentsEnabled?: boolean | null;
   holdingsSyncedAt?: string | null;
   status: "active" | "inactive" | "error";
@@ -224,7 +225,7 @@ export function ConnectionsOverview() {
                           <span className="text-muted-foreground">
                             ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
                           </span>
-                          {item.externalId && <PlaidConnectButton itemId={item.externalId} purpose={item.investmentsEnabled ? "investments" : "bank"} />}
+                          {item.externalId && <PlaidConnectButton itemId={item.externalId} purpose={item.creditEnabled ? "credit" : item.investmentsEnabled ? "investments" : "bank"} />}
                         </li>
                       ))}
                     </ul>
@@ -232,6 +233,7 @@ export function ConnectionsOverview() {
                 )}
                 {row.provider === "plaid" && <>
                   <PlaidConnectButton />
+                  <div className="border-t pt-3"><PlaidConnectButton purpose="credit" /></div>
                   <div className="border-t pt-3"><PlaidConnectButton purpose="investments" /></div>
                   {providerRows.some(item => item.investmentsEnabled) && <InvestmentSyncButton />}
                 </>}
@@ -248,7 +250,7 @@ export function ConnectionsOverview() {
         </CardHeader>
         <CardContent className="space-y-1 text-sm text-muted-foreground">
           <p>- All integrations are read-only.</p>
-          <p>- No financial transaction endpoints exist.</p>
+          <p>- Cannot initiate payments, transfers, or trades.</p>
           <p>- Provider secrets are server-side environment variables only.</p>
           <p>- Bank usernames/passwords are never stored.</p>
         </CardContent>

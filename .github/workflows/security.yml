@@ -26,4 +26,5 @@ jobs:
       - run: node --import tsx tests/plaid-redirect.ts
       - run: node --import tsx tests/bank-sync.ts
       - run: node --import tsx tests/investment-holdings.ts
+      - run: node --import tsx tests/credit-card.ts
       - run: npm audit --omit=dev --audit-level=high

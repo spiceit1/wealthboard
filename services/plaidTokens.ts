@@ -9,6 +9,7 @@ export type PlaidItemToken = {
   itemId: string;
   accessToken: string;
   investmentsEnabled: boolean;
+  creditEnabled: boolean;
 };
 
 /**
@@ -23,6 +24,7 @@ export async function getPlaidAccessTokensForUser(userId: string): Promise<Plaid
       itemId: r.itemId,
       accessToken: decryptSecret(r.accessTokenEncrypted),
       investmentsEnabled: r.investmentsEnabled,
+      creditEnabled: r.creditEnabled,
     }));
   }
 
@@ -62,14 +64,14 @@ export async function getPlaidAccessTokensForUser(userId: string): Promise<Plaid
       .delete(providerTokens)
       .where(and(eq(providerTokens.userId, userId), eq(providerTokens.provider, "plaid")));
 
-    return [{ itemId, accessToken, investmentsEnabled: false }];
+    return [{ itemId, accessToken, investmentsEnabled: false, creditEnabled: false }];
   } catch {
     // Plaid call failed (e.g. invalid token); return legacy single token without item id for best-effort fetch
     const conn = await db.query.connections.findFirst({
       where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
     });
     const fallbackItemId = conn?.externalId ?? "legacy";
-    return [{ itemId: fallbackItemId, accessToken, investmentsEnabled: false }];
+    return [{ itemId: fallbackItemId, accessToken, investmentsEnabled: false, creditEnabled: false }];
   }
 }
 
@@ -80,6 +82,7 @@ export async function savePlaidAccessToken(params: {
   institutionName?: string | null;
   institutionId?: string | null;
   investmentsEnabled?: boolean;
+  creditEnabled?: boolean;
   replaceManualStocks?: boolean;
 }) {
   const {
@@ -118,6 +121,7 @@ export async function savePlaidAccessToken(params: {
       itemId,
       accessTokenEncrypted: encryptSecret(accessToken),
       institutionId: institutionId ?? null,
+      creditEnabled: params.creditEnabled ?? false,
       investmentsEnabled: params.investmentsEnabled ?? false,
       replaceManualStocks: params.replaceManualStocks ?? false,
     })
@@ -126,6 +130,7 @@ export async function savePlaidAccessToken(params: {
       set: {
         accessTokenEncrypted: encryptSecret(accessToken),
         institutionId: institutionId ?? null,
+        creditEnabled: params.creditEnabled ?? false,
         investmentsEnabled: params.investmentsEnabled ?? false,
         replaceManualStocks: params.replaceManualStocks ?? false,
         updatedAt: new Date(),
@@ -143,6 +148,7 @@ export async function savePlaidAccessToken(params: {
     );
     for (const stale of staleSameInstitution) {
       const staleItem = await db.query.plaidItems.findFirst({ where: and(eq(plaidItems.userId,userId),eq(plaidItems.itemId,stale.externalId)) });
+      if (params.creditEnabled || staleItem?.creditEnabled) continue;
       if (Boolean(staleItem?.investmentsEnabled) !== Boolean(params.investmentsEnabled)) continue;
       if (params.investmentsEnabled) {
         // Retain prior holdings until a complete replacement snapshot succeeds.

@@ -1,0 +1,1 @@
+ALTER TABLE "plaid_items" ADD COLUMN "credit_enabled" boolean DEFAULT false NOT NULL;

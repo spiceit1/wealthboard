@@ -110,6 +110,7 @@ export const plaidItems = pgTable(
     itemId: varchar("item_id", { length: 191 }).notNull(),
     accessTokenEncrypted: text("access_token_encrypted").notNull(),
     institutionId: varchar("institution_id", { length: 191 }),
+    creditEnabled: boolean("credit_enabled").notNull().default(false),
     investmentsEnabled: boolean("investments_enabled").notNull().default(false),
     replaceManualStocks: boolean("replace_manual_stocks").notNull().default(false),
     holdingsSyncedAt: timestamp("holdings_synced_at", { withTimezone: true }),

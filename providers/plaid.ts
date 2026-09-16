@@ -20,7 +20,7 @@ export async function fetchPlaidBalances(userId?: string): Promise<ProviderResul
   }
 
   const allTokens = await getPlaidAccessTokensForUser(resolvedUserId);
-  const itemTokens = allTokens.filter(item => !item.investmentsEnabled);
+  const itemTokens = allTokens.filter(item => !item.investmentsEnabled && !item.creditEnabled);
   if (allTokens.length && !itemTokens.length) return { source: "plaid", fetchedAt: new Date().toISOString(), data: [], meta: { plaidItemIds: [] } };
   if (!itemTokens.length) {
     throw new Error("Plaid access token is missing. Complete Link token exchange first.");
