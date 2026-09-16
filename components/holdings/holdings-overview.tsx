@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
+import { InvestmentSyncButton } from "@/components/holdings/investment-sync-button";
 import { HoldingsSyncButton } from "@/components/holdings/holdings-sync-button";
 import { ManualHoldingEditor } from "@/components/holdings/manual-holding-editor";
 import { PositionsTable } from "@/components/holdings/positions-table";
@@ -70,6 +71,7 @@ export function HoldingsOverview() {
   const holdingsQuery = useQuery({
     queryKey: ["holdings-overview"],
     queryFn: fetchHoldings,
+    refetchInterval: 15_000,
   });
 
   const rows = useMemo(() => holdingsQuery.data?.rows ?? [], [holdingsQuery.data?.rows]);
@@ -98,9 +100,10 @@ export function HoldingsOverview() {
         <section className="space-y-2">
           <h1 className="wb-page-title">Holdings</h1>
           <p className="text-sm text-muted-foreground">
-            Manual stock and crypto quantities with sync-driven price refresh.
+            Linked stocks import quantities from Plaid daily. Other stocks and crypto can be entered manually.
           </p>
           <HoldingsSyncButton />
+        {rows.some(row => !row.isManual) && <InvestmentSyncButton />}
         </section>
         <Card className="wb-card-hover">
           <CardHeader>
@@ -160,9 +163,10 @@ export function HoldingsOverview() {
       <section className="space-y-2">
         <h1 className="wb-page-title">Holdings</h1>
         <p className="text-sm text-muted-foreground">
-          Manual stock and crypto quantities with sync-driven price refresh.
+          Linked stocks import quantities from Plaid daily. Other stocks and crypto can be entered manually.
         </p>
         <HoldingsSyncButton />
+        {rows.some(row => !row.isManual) && <InvestmentSyncButton />}
       </section>
 
       <ManualHoldingEditor />

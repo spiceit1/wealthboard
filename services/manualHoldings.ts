@@ -73,6 +73,7 @@ export async function upsertManualHolding(params: {
           eq(holdings.symbol, symbol),
           eq(holdings.assetClass, params.assetClass),
           eq(holdings.isManual, true),
+          eq(holdings.includedInTotals, true),
         ),
       );
     return { deleted: true };
@@ -85,6 +86,7 @@ export async function upsertManualHolding(params: {
       eq(holdings.symbol, symbol),
       eq(holdings.assetClass, params.assetClass),
       eq(holdings.isManual, true),
+          eq(holdings.includedInTotals, true),
     ),
   });
 

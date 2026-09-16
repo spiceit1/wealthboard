@@ -32,6 +32,11 @@ async function main() {
     return new Response(null, { status: 202 });
   };
   assert.equal((await dispatchBankSync(config, fetcher)).queued, true);
+  await dispatchBankSync(config, async (input, init) => {
+    assert.equal(String(input), 'https://wealth.example/.netlify/functions/investments-sync-background');
+    assert.deepEqual(JSON.parse(String(init?.body)), {runId:'owned-run'});
+    return new Response(null, {status:202});
+  }, true, 'owned-run');
   await assert.rejects(dispatchBankSync(config, async () => new Response(null, { status: 500 })), /could not be queued/);
   await assert.rejects(dispatchBankSync({ URL: 'http://wealth.example', INTERNAL_SYNC_TOKEN: secret }, fetcher), /HTTPS/);
   await assert.rejects(dispatchBankSync({ URL: config.URL }, fetcher), /authentication/);

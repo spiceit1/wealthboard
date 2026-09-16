@@ -1,7 +1,7 @@
 import { dispatchBankSync, hasFreshCashAsOfNyDay } from "../../lib/bank-sync";
 import { getDemoUserId } from "../../services/dashboardData";
 import { db } from "../../db/client";
-import { accounts, dailySnapshots, syncRuns } from "../../db/schema";
+import { accounts, dailySnapshots, syncRuns, plaidItems } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import { runPriceOnlySync } from "../../services/runFullSync";
 
@@ -92,6 +92,9 @@ export default async (request: Request) => {
       nyDate,
     );
 
+    const investmentItems = await db.query.plaidItems.findMany({ where: and(eq(plaidItems.userId, userId), eq(plaidItems.investmentsEnabled, true)) });
+    const hasFreshInvestments = investmentItems.every(item => item.holdingsSyncedAt && getNyDateKey(item.holdingsSyncedAt) === nyDate);
+
     const latestScheduledRun = await db.query.syncRuns.findFirst({
       where: and(eq(syncRuns.userId, userId), eq(syncRuns.trigger, "scheduled")),
       orderBy: (table, { desc: orderDesc }) => [orderDesc(table.startedAt)],
@@ -104,7 +107,7 @@ export default async (request: Request) => {
     // Daily recovery rule: if today's 9:00 snapshot is missing, keep retrying full scheduled sync
     // during the intraday schedule window until daily snapshot is written.
     // Also retry if snapshot exists but Plaid cash balances are still stale.
-    if ((!existingDaily || !hasFreshCash) && !withinRecoveryCooldown) {
+    if ((!existingDaily || !hasFreshCash || !hasFreshInvestments) && !withinRecoveryCooldown) {
       const run = await dispatchBankSync({ URL: Netlify.env.get("URL"), APP_URL: Netlify.env.get("APP_URL"), INTERNAL_SYNC_TOKEN: Netlify.env.get("INTERNAL_SYNC_TOKEN") });
       return json({
         ...run,

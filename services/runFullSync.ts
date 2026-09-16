@@ -1,4 +1,5 @@
-import { hasFreshCashAsOfNyDay } from '../lib/bank-sync';
+import { syncInvestmentHoldings } from "./investmentHoldings";
+import { dispatchBankSync, hasFreshCashAsOfNyDay } from '../lib/bank-sync';
 import { after } from "next/server";
 import { fetchStockPrices } from "@/services/stockQuotes";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
@@ -9,6 +10,7 @@ import {
   connections,
   dailySnapshots,
   holdings,
+  plaidItems,
   intradaySnapshots,
   prices,
   snapshotItems,
@@ -261,26 +263,20 @@ async function markPlaidConnectionsSynced(userId: string, plaidItemIds: string[]
     );
 }
 
-async function removeAutoStockHoldings(userId: string) {
-  await db
-    .delete(holdings)
-    .where(and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.isManual, false)));
-}
-
-async function refreshManualHoldingValuations(userId: string) {
-  const manualRows = await db.query.holdings.findMany({
-    where: and(eq(holdings.userId, userId), eq(holdings.isManual, true)),
+async function refreshHoldingValuations(userId: string) {
+  const holdingRows = await db.query.holdings.findMany({
+    where: and(eq(holdings.userId, userId), eq(holdings.includedInTotals, true)),
   });
 
-  if (!manualRows.length) {
+  if (!holdingRows.length) {
     return { stockSymbols: [] as string[], cryptoSymbols: [] as string[], updatedStockCount: 0, updatedCryptoCount: 0, failures: [] as string[] };
   }
 
   const stockSymbols = [...new Set(
-    manualRows.filter((h) => h.assetClass === "stock").map((h) => h.symbol.toUpperCase()),
+    holdingRows.filter((h) => h.assetClass === "stock").map((h) => h.symbol.toUpperCase()),
   )];
   const cryptoSymbols = [...new Set(
-    manualRows.filter((h) => h.assetClass === "crypto").map((h) => h.symbol.toUpperCase()),
+    holdingRows.filter((h) => h.assetClass === "crypto").map((h) => h.symbol.toUpperCase()),
   )];
 
   const { quotes: stockPriceMap, failures } = await fetchStockPrices(stockSymbols);
@@ -304,10 +300,10 @@ async function refreshManualHoldingValuations(userId: string) {
     }
   }
 
-  let updatedStockCount = 0;
-  let updatedCryptoCount = 0;
+  const updatedStocks = new Set<string>();
+  const updatedCrypto = new Set<string>();
 
-  for (const holding of manualRows) {
+  for (const holding of holdingRows) {
     const symbol = holding.symbol.toUpperCase();
     const stockQuote = stockPriceMap.get(symbol);
     const cryptoPrice = cryptoPriceMap.get(symbol);
@@ -338,8 +334,8 @@ async function refreshManualHoldingValuations(userId: string) {
         source: holding.assetClass === "stock" ? "snaptrade" : "coingecko",
       })
       .onConflictDoNothing();
-    if (holding.assetClass === "stock") updatedStockCount += 1;
-    if (holding.assetClass === "crypto") updatedCryptoCount += 1;
+    if (holding.assetClass === "stock") updatedStocks.add(symbol);
+    if (holding.assetClass === "crypto") updatedCrypto.add(symbol);
   }
 
   const rowsByAccount = await db.query.accounts.findMany({
@@ -348,7 +344,7 @@ async function refreshManualHoldingValuations(userId: string) {
 
   for (const account of rowsByAccount) {
     const accountHoldings = await db.query.holdings.findMany({
-      where: and(eq(holdings.userId, userId), eq(holdings.accountId, account.id), eq(holdings.isManual, true)),
+      where: and(eq(holdings.userId, userId), eq(holdings.accountId, account.id), eq(holdings.includedInTotals, true)),
     });
     const accountTotal = accountHoldings.reduce((sum, item) => sum + Number(item.marketValue), 0);
     await db
@@ -361,7 +357,7 @@ async function refreshManualHoldingValuations(userId: string) {
       .where(eq(accounts.id, account.id));
   }
 
-  return { stockSymbols, cryptoSymbols, updatedStockCount, updatedCryptoCount, failures };
+  return { stockSymbols, cryptoSymbols, updatedStockCount: updatedStocks.size, updatedCryptoCount: updatedCrypto.size, failures };
 }
 
 async function persistSnapshot(
@@ -374,10 +370,10 @@ async function persistSnapshot(
     where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
   });
   const stockRows = await db.query.holdings.findMany({
-    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
+    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.includedInTotals, true)),
   });
   const cryptoRows = await db.query.holdings.findMany({
-    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+    where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto"), eq(holdings.includedInTotals, true)),
   });
 
   const liveCash = cashRows.reduce((sum, row) => sum + Number(row.lastBalance), 0);
@@ -552,11 +548,10 @@ async function runPriceRefreshSteps(
   userId: string,
   pushEvent: (message: string, provider?: "plaid" | "snaptrade" | "coingecko") => Promise<void>,
 ) {
-  await pushEvent("Using manual holdings for stocks and crypto", "snaptrade");
+  await pushEvent("Refreshing prices for saved stock and crypto holdings", "snaptrade");
   try {
-    await removeAutoStockHoldings(userId);
-    await pushEvent("Fetching latest market prices for manual holdings", "coingecko");
-    const result = await refreshManualHoldingValuations(userId);
+    await pushEvent("Fetching latest market prices", "coingecko");
+    const result = await refreshHoldingValuations(userId);
     await pushEvent(
       `Updated prices for ${result.updatedStockCount}/${result.stockSymbols.length} stock symbols and ${result.updatedCryptoCount}/${result.cryptoSymbols.length} crypto symbols`,
       "coingecko",
@@ -566,7 +561,7 @@ async function runPriceRefreshSteps(
     }
   } catch (error) {
     await pushEvent(
-      `Manual holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Holding valuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       "coingecko",
     );
     throw error;
@@ -622,6 +617,7 @@ async function executeFullSync(
           where: and(eq(connections.userId, userId), eq(connections.provider, "plaid")),
         });
         for (const conn of plaidConnections) {
+          if (!plaid.meta?.plaidItemIds?.includes(conn.externalId)) continue;
           const activeForItem = new Set(
             plaid.data
               .filter((a) => a.plaidItemId === conn.externalId)
@@ -647,6 +643,10 @@ async function executeFullSync(
         "plaid",
       );
     }
+
+    const investments = await syncInvestmentHoldings(userId);
+    for (const message of [...investments.results, ...investments.failures]) await pushEvent(message, "plaid");
+    if (investments.failures.length) bankError = [bankError, ...investments.failures].filter(Boolean).join("; ");
 
     await runPriceRefreshSteps(userId, pushEvent);
 
@@ -677,7 +677,7 @@ async function executeFullSync(
         errorMessage: bankError,
       })
       .where(eq(syncRuns.id, syncRunId));
-    await pushEvent(bankError ? "Sync incomplete: bank balances were not updated. Previous balances retained." : "Sync complete");
+    await pushEvent(bankError ? "Sync incomplete: a Plaid update failed. See the preceding details; previous data was retained." : "Sync complete");
 
     return {
       runId: syncRunId,
@@ -854,7 +854,9 @@ export async function createSyncRun(userId: string, trigger: SyncTrigger = "manu
 
         // Recovery mode: allow another scheduled run later the same day if
         // cash balances are still stale for today (e.g., Plaid failed at 9 AM).
-        if (!hasFreshCashForNyDay) {
+        const investments = await db.query.plaidItems.findMany({ where: and(eq(plaidItems.userId, userId), eq(plaidItems.investmentsEnabled, true)) });
+        const hasFreshInvestments = investments.every(item => item.holdingsSyncedAt && getNyDateKey(item.holdingsSyncedAt) === nyToday);
+        if (!hasFreshCashForNyDay || !hasFreshInvestments) {
           // continue and create a new scheduled run
         } else {
           return {
@@ -902,12 +904,22 @@ export async function runFullSync(userId: string, trigger: SyncTrigger = "manual
   return getSyncRunProgress(run.runId, userId);
 }
 
+export async function runCreatedFullSync(userId: string, runId: string) {
+  const run = await db.query.syncRuns.findFirst({ where: and(eq(syncRuns.id,runId),eq(syncRuns.userId,userId)) });
+  if (!run || run.trigger !== "manual") throw new Error("Sync run not found.");
+  if (run.status === "running") await executeFullSync(run.id,userId,"manual");
+  return getSyncRunProgress(runId,userId);
+}
+
 export async function triggerSyncInBackground(userId: string, trigger: SyncTrigger = "manual") {
   const run = await createSyncRun(userId, trigger);
   if (run.started) {
-    const promise = executeFullSync(run.runId, userId, trigger).then(() => undefined);
-    inFlightRuns.set(run.runId, promise);
-    after(async () => { try { await promise; } finally { inFlightRuns.delete(run.runId); } });
+    try {
+      await dispatchBankSync({ URL: process.env.URL, APP_URL: process.env.APP_URL, INTERNAL_SYNC_TOKEN: process.env.INTERNAL_SYNC_TOKEN },fetch,true,run.runId);
+    } catch (error) {
+      await db.update(syncRuns).set({status:"failed",completedAt:new Date(),errorMessage:"Could not queue the sync. Please try again."}).where(eq(syncRuns.id,run.runId));
+      throw error;
+    }
   }
   return run;
 }

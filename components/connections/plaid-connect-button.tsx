@@ -20,6 +20,7 @@ type ExchangeResponse = {
 type Props = {
   disabled?: boolean;
   itemId?: string;
+  purpose?: "bank" | "investments";
 };
 
 type ApiErrorResponse = {
@@ -38,7 +39,7 @@ type PlaidExitError = {
   error_type?: string;
 };
 
-export function PlaidConnectButton({ disabled = false, itemId }: Props) {
+export function PlaidConnectButton({ disabled = false, itemId, purpose = "bank" }: Props) {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,13 +48,20 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
   const [receivedRedirectUri, setReceivedRedirectUri] = useState<string | undefined>();
   const [updating, setUpdating] = useState(Boolean(itemId));
   const [success, setSuccess] = useState(false);
+  const [manualChoice, setManualChoice] = useState("");
+  const [replaceManualStocks, setReplaceManualStocks] = useState(false);
   useEffect(() => {
     if (itemId || !window.location.search.includes("oauth_state_id=")) return;
     const saved = sessionStorage.getItem("wealthboard-plaid-link");
     if (!saved) { setError("Bank authorization expired. Start the connection again."); return; }
-    try { const data = JSON.parse(saved); setLinkToken(data.token); setUpdating(data.updating); setReceivedRedirectUri(window.location.href); setShouldOpen(true); }
+    try { const data = JSON.parse(saved); if ((data.purpose ?? "bank") !== purpose) return; setReplaceManualStocks(Boolean(data.replaceManualStocks)); setLinkToken(data.token); setUpdating(data.updating); setReceivedRedirectUri(window.location.href); setShouldOpen(true); }
     catch { setError("Unable to resume bank authorization. Please start again."); }
-  }, [itemId]);
+  }, [itemId, purpose]);
+
+  const queueInvestmentImport = async () => {
+    const response = await fetch("/api/plaid/sync-investments", { method: "POST" });
+    if (!response.ok) throw new Error("Connection saved, but the import could not start. Use Sync Investment Holdings below to retry.");
+  };
 
   const onSuccess = async (publicToken: string, metadata: unknown) => {
     setLoading(true);
@@ -61,6 +69,7 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
     try {
       if (updating) {
         await invalidateForPlaidConnectionChange(queryClient);
+        if (purpose === "investments") await queueInvestmentImport();
         setSuccess(true);
         sessionStorage.removeItem("wealthboard-plaid-link");
         return;
@@ -71,6 +80,8 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
         body: JSON.stringify({
           publicToken,
           metadata,
+          purpose,
+          replaceManualStocks,
         }),
       });
 
@@ -83,6 +94,7 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
       const payload = (await response.json()) as ExchangeResponse;
       if (payload.status === "connected") {
         await invalidateForPlaidConnectionChange(queryClient);
+        if (purpose === "investments") await queueInvestmentImport();
         setSuccess(true);
         sessionStorage.removeItem("wealthboard-plaid-link");
       }
@@ -115,8 +127,8 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
 
   const buttonLabel = useMemo(() => {
     if (loading) return "Connecting...";
-    return itemId ? "Reconnect" : "Connect another institution with Plaid";
-  }, [loading, itemId]);
+    return itemId ? "Reconnect" : purpose === "investments" ? "Connect Robinhood / investments" : "Connect another institution with Plaid";
+  }, [loading, itemId, purpose]);
 
   const beginLinkFlow = async () => {
     setLoading(true);
@@ -133,6 +145,7 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
         body: JSON.stringify({
           redirectUri,
           itemId,
+          purpose,
         }),
       });
       if (!response.ok) {
@@ -141,7 +154,7 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
         throw new Error((payload?.message ?? "Unable to create Plaid link token.") + code);
       }
       const payload = (await response.json()) as LinkTokenResponse;
-      sessionStorage.setItem("wealthboard-plaid-link", JSON.stringify({token:payload.linkToken,updating:Boolean(itemId)}));
+      sessionStorage.setItem("wealthboard-plaid-link", JSON.stringify({token:payload.linkToken,updating:Boolean(itemId),purpose,replaceManualStocks}));
       setLinkToken(payload.linkToken);
       setShouldOpen(true);
     } catch (err) {
@@ -153,10 +166,19 @@ export function PlaidConnectButton({ disabled = false, itemId }: Props) {
 
   return (
     <div className="space-y-2">
-      <Button size="sm" onClick={beginLinkFlow} disabled={disabled || loading}>
+      {purpose === "investments" && !itemId && <label className="block space-y-1 text-xs">
+        <span>When the first import succeeds:</span>
+        <select aria-label="Manual stock entries after import" className="block w-full rounded-md border bg-background p-2" value={manualChoice} onChange={event => { setManualChoice(event.target.value); setReplaceManualStocks(event.target.value === "replace"); }}>
+          <option value="">Choose how to handle your manual stocks</option>
+          <option value="replace">Replace all manual stocks with my imported stocks</option>
+          <option value="keep">Keep manual stocks — they are held at other brokerages</option>
+        </select>
+        <span>Crypto stays manual. Replaced stock entries are kept as a backup and excluded from totals.</span>
+      </label>}
+      <Button size="sm" onClick={beginLinkFlow} disabled={disabled || loading || (purpose === "investments" && !itemId && !manualChoice)}>
         {buttonLabel}
       </Button>
-      {success && <p className="text-xs">Bank authorization saved. Use Dashboard → Sync Now to refresh balances.</p>}
+      {success && <p className="text-xs">{purpose === "investments" ? "Investment connection saved. Import started; check Holdings and Sync Logs for progress." : "Bank authorization saved. Use Dashboard → Sync Now to refresh balances."}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );

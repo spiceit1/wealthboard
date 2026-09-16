@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { InvestmentSyncButton } from "@/components/holdings/investment-sync-button";
 import { PlaidConnectButton } from "@/components/connections/plaid-connect-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,14 +13,14 @@ import { cn } from "@/lib/utils";
 const providerSecurityNotes: Record<string, string> = {
   plaid: "Uses Plaid Link with read-only access. Credentials are never stored.",
   snaptrade:
-    "Stock prices are refreshed from Yahoo Finance during manual sync, every 15 minutes on weekdays during market hours (09:30-16:00 ET), and the daily 9:00 AM America/New_York scheduled sync. Quantities are entered manually in Holdings.",
+    "Stock prices are refreshed from Yahoo Finance during manual sync, every 15 minutes on weekdays during market hours (09:30-16:00 ET), and the daily 9:00 AM America/New_York scheduled sync. Stock quantities can be imported through Plaid or entered manually in Holdings.",
   coingecko:
     "Crypto prices are refreshed from CoinGecko during manual sync, every 15 minutes on weekdays during market hours (09:30-16:00 ET), and the daily 9:00 AM America/New_York scheduled sync. Quantities are entered manually in Holdings.",
 };
 
 const providerSyncMethod: Record<string, string> = {
-  plaid: "Pulls live bank balances from Plaid-linked accounts.",
-  snaptrade: "Price source for manual stocks: Yahoo Finance (no position import).",
+  plaid: "Imports bank balances and linked investment holdings. Investment quantities sync daily at 9 AM Eastern; Plaid may report trades after market close.",
+  snaptrade: "Stock prices: Yahoo Finance. Position imports: Plaid Investments.",
   coingecko: "Price source for manual crypto: CoinGecko API.",
 };
 
@@ -28,6 +29,8 @@ type ConnectionRow = {
   provider: "plaid" | "snaptrade" | "coingecko";
   displayName: string;
   externalId?: string;
+  investmentsEnabled?: boolean | null;
+  holdingsSyncedAt?: string | null;
   status: "active" | "inactive" | "error";
   lastSyncedAt: string | null;
 };
@@ -51,6 +54,7 @@ export function ConnectionsOverview() {
   const query = useQuery({
     queryKey: ["connections-overview"],
     queryFn: fetchConnections,
+    refetchInterval: 15_000,
   });
 
   if (query.isPending) {
@@ -153,7 +157,7 @@ export function ConnectionsOverview() {
           const mode = adapterModes[row.provider];
           const badge: { variant: "secondary" | "destructive"; label: string } = (() => {
             if (row.provider === "snaptrade") {
-              return { variant: "secondary", label: "Auto Prices (Manual Holdings)" };
+              return { variant: "secondary", label: "Automatic Stock Prices" };
             }
             if (row.provider === "coingecko") {
               return {
@@ -220,13 +224,17 @@ export function ConnectionsOverview() {
                           <span className="text-muted-foreground">
                             ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
                           </span>
-                          {item.externalId && <PlaidConnectButton itemId={item.externalId} />}
+                          {item.externalId && <PlaidConnectButton itemId={item.externalId} purpose={item.investmentsEnabled ? "investments" : "bank"} />}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
-                {row.provider === "plaid" && <PlaidConnectButton />}
+                {row.provider === "plaid" && <>
+                  <PlaidConnectButton />
+                  <div className="border-t pt-3"><PlaidConnectButton purpose="investments" /></div>
+                  {providerRows.some(item => item.investmentsEnabled) && <InvestmentSyncButton />}
+                </>}
               </CardContent>
             </Card>
           );

@@ -7,6 +7,8 @@ import { savePlaidAccessToken } from "@/services/plaidTokens";
 
 const exchangeSchema = z.object({
   publicToken: z.string().min(1),
+  purpose: z.enum(["bank", "investments"]).default("bank"),
+  replaceManualStocks: z.boolean().default(false),
   metadata: z
     .object({
       institution: z
@@ -38,6 +40,8 @@ export async function POST(request: Request) {
       accessToken: exchange.data.access_token,
       institutionName: body.metadata?.institution?.name ?? "Plaid Institution",
       institutionId: body.metadata?.institution?.institution_id,
+      investmentsEnabled: body.purpose === "investments",
+      replaceManualStocks: body.purpose === "investments" && body.replaceManualStocks,
     });
 
     return NextResponse.json(

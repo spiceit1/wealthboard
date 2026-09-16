@@ -16,10 +16,11 @@ export function validBankSyncAuthorization(value: string | null, secret: string,
   return expected.length === value.length && timingSafeEqual(Buffer.from(value), Buffer.from(expected));
 }
 
-export async function dispatchBankSync(config: { URL?: string; APP_URL?: string; INTERNAL_SYNC_TOKEN?: string }, fetcher: typeof fetch = fetch) {
-  const url = new URL('/.netlify/functions/bank-sync-background', getPlaidRedirectUri(config));
+export async function dispatchBankSync(config: { URL?: string; APP_URL?: string; INTERNAL_SYNC_TOKEN?: string }, fetcher: typeof fetch = fetch, investmentOnly = false, runId?: string) {
+  const url = new URL(investmentOnly ? '/.netlify/functions/investments-sync-background' : '/.netlify/functions/bank-sync-background', getPlaidRedirectUri(config));
   const response = await fetcher(url, {
     method: 'POST',
+    body: runId ? JSON.stringify({ runId }) : undefined,
     headers: { 'x-bank-sync-authorization': bankSyncAuthorization(config.INTERNAL_SYNC_TOKEN ?? '') },
     redirect: 'error',
     signal: AbortSignal.timeout(10_000),

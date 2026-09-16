@@ -6,6 +6,7 @@ import {
   connections,
   dailySnapshots,
   holdings,
+  plaidItems,
   intradaySnapshots,
   snapshotItems,
   syncRunEvents,
@@ -121,10 +122,10 @@ export async function getDashboardData(userId: string) {
         where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
       }),
       db.query.holdings.findMany({
-        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock")),
+        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "stock"), eq(holdings.includedInTotals, true)),
       }),
       db.query.holdings.findMany({
-        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto")),
+        where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto"), eq(holdings.includedInTotals, true)),
       }),
     ]);
 
@@ -530,10 +531,11 @@ export async function getHoldingsOverview(userId: string) {
         lastPrice: holdings.lastPrice,
         marketValue: holdings.marketValue,
         isManual: holdings.isManual,
+        quantitySyncedAt: holdings.quantitySyncedAt,
         updatedAt: holdings.updatedAt,
       })
       .from(holdings)
-      .where(eq(holdings.userId, userId))
+      .where(and(eq(holdings.userId, userId), eq(holdings.includedInTotals, true)))
       .orderBy(asc(holdings.assetClass), asc(holdings.symbol));
 
     const normalizedRows = rows.map((row) => ({
@@ -622,8 +624,11 @@ export async function getConnectionsOverview(userId: string) {
         displayName: connections.displayName,
         status: connections.status,
         lastSyncedAt: connections.lastSyncedAt,
+        investmentsEnabled: plaidItems.investmentsEnabled,
+        holdingsSyncedAt: plaidItems.holdingsSyncedAt,
       })
       .from(connections)
+      .leftJoin(plaidItems, and(eq(plaidItems.userId, connections.userId),eq(plaidItems.itemId, connections.externalId)))
       .where(eq(connections.userId, userId))
       .orderBy(asc(connections.provider));
   } catch {

@@ -1,3 +1,4 @@
+import { Products } from "plaid";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -10,6 +11,7 @@ const requestSchema = z
   .object({
     redirectUri: z.string().url().optional(),
     itemId: z.string().optional(),
+    purpose: z.enum(["bank", "investments"]).default("bank"),
   })
   .optional();
 
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
       language: "en",
       country_codes: getPlaidCountryCodes(),
       user: { client_user_id: userId },
-      ...(linked ? { access_token: linked.accessToken } : { products: getPlaidProducts() }),
+      ...(linked ? { access_token: linked.accessToken } : { products: payload?.purpose === "investments" ? [Products.Investments] : getPlaidProducts() }),
       redirect_uri: getPlaidRedirectUri(),
     });
 

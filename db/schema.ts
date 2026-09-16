@@ -110,6 +110,9 @@ export const plaidItems = pgTable(
     itemId: varchar("item_id", { length: 191 }).notNull(),
     accessTokenEncrypted: text("access_token_encrypted").notNull(),
     institutionId: varchar("institution_id", { length: 191 }),
+    investmentsEnabled: boolean("investments_enabled").notNull().default(false),
+    replaceManualStocks: boolean("replace_manual_stocks").notNull().default(false),
+    holdingsSyncedAt: timestamp("holdings_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -167,11 +170,15 @@ export const holdings = pgTable(
     lastPrice: numeric("last_price", { precision: 18, scale: 6 }).notNull().default("0"),
     marketValue: numeric("market_value", { precision: 18, scale: 2 }).notNull().default("0"),
     isManual: boolean("is_manual").notNull().default(false),
+    includedInTotals: boolean("included_in_totals").notNull().default(true),
+    plaidSecurityId: varchar("plaid_security_id", { length: 191 }),
+    quantitySyncedAt: timestamp("quantity_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     userSymbolIdx: index("holdings_user_symbol_idx").on(table.userId, table.symbol),
+    plaidPositionUnique: uniqueIndex("holdings_plaid_position_uidx").on(table.userId, table.accountId, table.plaidSecurityId),
   }),
 );
 

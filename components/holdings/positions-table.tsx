@@ -17,6 +17,7 @@ type Row = {
   marketValue: number;
   updatedAt?: string | null;
   isManual: boolean;
+  quantitySyncedAt?: string | null;
 };
 
 type Props = {
@@ -71,7 +72,7 @@ export function PositionsTable({ rows }: Props) {
   const startEdit = (row: Row) => {
     if (!row.isManual || (row.assetClass !== "stock" && row.assetClass !== "crypto")) return;
     setEditingId(row.id);
-    setDraftQty(row.assetClass === "crypto" ? row.quantity.toFixed(6) : row.quantity.toFixed(2));
+    setDraftQty(row.quantity.toLocaleString("en-US", { maximumFractionDigits: 8 }));
     setError(null);
   };
 
@@ -147,7 +148,7 @@ export function PositionsTable({ rows }: Props) {
           <tbody>
             {tableRows.map((row) => (
               <tr key={row.id} className="wb-table-row">
-                <td className="py-2 pr-4">{row.symbol}</td>
+                <td className="py-2 pr-4">{row.symbol}{!row.isManual && <span className="ml-2 text-xs text-muted-foreground">Plaid</span>}</td>
                 <td className="py-2 pr-4">
                   {editingId === row.id ? (
                     <input
@@ -157,7 +158,7 @@ export function PositionsTable({ rows }: Props) {
                       onChange={(e) => setDraftQty(e.target.value)}
                     />
                   ) : (
-                    row.assetClass === "crypto" ? row.quantity.toFixed(6) : row.quantity.toFixed(2)
+                    row.quantity.toLocaleString("en-US", { maximumFractionDigits: 8 })
                   )}
                 </td>
                 <td className="py-2 pr-4">{formatUSD(row.lastPrice)}</td>
@@ -218,7 +219,7 @@ export function PositionsTable({ rows }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground">-</span>
+                    <span className="text-xs text-muted-foreground">Quantity from Plaid{row.quantitySyncedAt ? ` · ${formatDateTimeEastern(row.quantitySyncedAt, "Never")}` : ""}</span>
                   )}
                 </td>
               </tr>
