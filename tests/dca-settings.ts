@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {defaultDcaSettings as defaults,dcaSettingsSchema,previewDca} from "../lib/dca-settings";
+assert(dcaSettingsSchema.safeParse(defaults).success);
+const ladder=previewDca(defaults,100);
+assert.equal(ladder.length,5);assert.equal(ladder[4].price,88);assert.equal(ladder[4].cost,505);
+assert(Math.abs((ladder[4].targets[0]*(1-defaults.feePercent/100)/ladder[4].average-1)-0.03)<1e-10);
+assert.equal(previewDca({...defaults,spacingMultiplier:2,maxBuys:3},100)[3].drop,21);
+assert.equal(previewDca({...defaults,sizeMultiplier:2,maxBuys:3},100)[3].amount,400);
+for(const change of [{budget:499},{targets:[{profit:3,allocation:90}]},{targets:[{profit:4,allocation:50},{profit:3,allocation:50}]},{maxBuys:20,spacingMultiplier:5},{activeOrders:5},{baseAmount:NaN},{entry:"price_below",entryPrice:0},{trailingStop:true,stopLoss:0},{symbol:"BTC-USD"}]) assert(!dcaSettingsSchema.safeParse({...defaults,...change}).success);
+assert(dcaSettingsSchema.safeParse({...defaults,maxBuys:0,activeOrders:0}).success);
+assert.throws(()=>previewDca(defaults,0));
+console.log("DCA budget, compounded spacing, fees, targets and invalid-input tests passed.");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { accounts, connections, dailySnapshots, holdings, intradaySnapshots, plaidItems, providerTokens, robinhoodConnections, robinhoodOauthAttempts, syncRuns, users } from "@/db/schema";
+import { accounts, dcaRevisions, connections, dailySnapshots, holdings, intradaySnapshots, plaidItems, providerTokens, robinhoodConnections, robinhoodOauthAttempts, syncRuns, users } from "@/db/schema";
 import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { getPlaidClient } from "@/lib/plaid";
 import { getPlaidAccessTokensForUser } from "@/services/plaidTokens";
@@ -25,6 +25,7 @@ export async function DELETE(request: Request) {
     }
     // Child snapshot items and sync events are removed by their cascading foreign keys.
     await db.batch([
+      db.delete(dcaRevisions).where(eq(dcaRevisions.userId,userId)),
       db.delete(robinhoodOauthAttempts).where(eq(robinhoodOauthAttempts.userId,userId)),
       db.delete(robinhoodConnections).where(eq(robinhoodConnections.userId,userId)),
       db.delete(dailySnapshots).where(eq(dailySnapshots.userId,userId)),

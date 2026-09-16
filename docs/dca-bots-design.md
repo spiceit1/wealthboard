@@ -48,4 +48,14 @@ Backtests require timestamped historical bars and explicit assumptions for fees,
 
 ## Direct website authorization blocker
 
-Production attempt September 16 failed at Robinhood /oauth/error before callback. Production database has no saved Robinhood tokens. Dynamic registration echoes the requested HTTPS callback and returns a generic Robinhood Trading client ID, but this is not proof the authorization server accepts the callback. Another integration's firsthand report describes the same public-HTTPS restriction; this remains supporting evidence rather than official confirmation. Do not forward a locally issued authorization code or impersonate an approved client to bypass redirect restrictions. Disabled the failing connect action until a supported route is verified. The official Crypto Trading API is another documented route, but its ability to target the dedicated Agentic crypto account has not been verified. Do not silently use the owner's regular crypto account.
+September 16: the owner relayed Robinhood support representative Rene's confirmation that arbitrary personal-web-app HTTPS callbacks are not supported. Direct connection initiation and callback completion are now disabled. The working approved Codex connection remains separate. Never forward locally issued codes or reuse its credentials in WealthBoard.
+
+Support is researching unattended operation, session renewal, request limits, and whether the official Crypto Trading API can target the dedicated Agentic crypto account. Follow-up promised within 48 hours; no monitor was scheduled.
+
+## Settings editor, first increment
+
+Implemented owner/MFA-protected server storage with immutable, monotonically numbered revisions and optimistic concurrency. One ZEC/USD bot, cash only. Draft saves and next-cycle selection are separate; no active version, worker, orders, or live statistics are claimed. Loading history creates local edits, not mutations of old versions. The future executor must explicitly bind a selected version to a cycle, never simply consume the latest draft. Saving/queuing is not authorization to activate.
+
+Inputs: initial amount, immediate/limit entry, averaging amount/drop/size and spacing multipliers, max and resting buys, total cash cap, up to four sell allocations, estimated fees, stops, trailing preferences, holding duration, cooldown, repeat and reinvestment. Advanced execution-dependent controls are planning settings only. Indicator conditions, custom irregular ladder, equities/multiple assets, backtests, and active-cycle order-change previews remain future work.
+
+Preview uses a user-provided illustrative initial price, cumulative percentage-point gaps from the initial fill, and constant estimated fees on each side. It assumes full fills before partial sells. This is not an executable broker order plan: precision, fees, fills, allocations and exit compatibility must be revalidated by the eventual worker. Tests cover capital ceilings, fee-aware target math, invalid configurations, owner isolation and concurrent saves. New storage participates in financial-data deletion.

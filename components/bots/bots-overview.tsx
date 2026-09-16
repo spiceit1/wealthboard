@@ -1,32 +1,60 @@
 "use client";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-export function BotsOverview() {
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
-  const status = useQuery({ queryKey: ["bot-connection"], queryFn: async () => {
-    const r = await fetch("/api/bots/connection", { cache: "no-store" });
-    if (!r.ok) throw new Error("Unable to check Robinhood connection.");
-    return r.json() as Promise<{ connected: boolean; directConnectionAvailable: boolean }>;
-  } });
-  async function connect() {
-    setBusy(true); setMessage("");
-    try {
-      const r = await fetch("/api/bots/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect" }) });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message);
-      window.location.assign(data.url);
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Connection unavailable."); setBusy(false); }
-  }
-  return <section className="space-y-6">
-    <div><h1 className="text-2xl font-semibold">DCA Bots</h1><p className="mt-1 text-muted-foreground">Prepare a strategy that buys in stages and sells at your chosen target.</p></div>
-    <div className="rounded-xl border bg-card p-6 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Robinhood connection</h2><span className="rounded bg-muted px-3 py-1 text-sm">Live trading off</span></div>
-      <p>{status.isPending ? "Checking connection…" : status.isError ? "Connection status unavailable." : status.data.connected ? "Robinhood authorization saved for WealthBoard." : "Robinhood is not connected to WealthBoard yet."}</p>
-      <p className="text-sm text-muted-foreground">Start a fresh authorization and complete Robinhood’s prompts promptly. Each attempt replaces the previous link and expires after 30 minutes. Your assistant connection is separate. Connecting does not start trading.</p>
-      <Button onClick={connect} disabled={busy || status.isPending || !status.data?.directConnectionAvailable}>{busy ? "Opening Robinhood…" : status.data?.connected ? "Reconnect Robinhood" : status.data?.directConnectionAvailable ? "Try a fresh Robinhood connection" : "Connection awaiting resolution"}</Button>
-      {message && <p role="alert">{message}</p>}
-    </div>
-    <div className="rounded-xl border bg-card p-6 space-y-3"><h2 className="text-lg font-semibold">Your planned setup</h2><dl className="grid gap-3 sm:grid-cols-3"><div><dt className="text-sm text-muted-foreground">Initial asset</dt><dd>Zcash (ZEC), direct crypto</dd></div><div><dt className="text-sm text-muted-foreground">Funding preference</dt><dd>Your own cash; no borrowing</dd></div><div><dt className="text-sm text-muted-foreground">Strategy status</dt><dd>Not configured</dd></div></dl><p className="text-sm text-muted-foreground">The strategy editor and trading worker are still being built. No automatic orders are enabled. Your account deposit is not a bot allocation.</p></div>
-  </section>;
+import { dcaSettingsSchema, defaultDcaSettings, previewDca, type DcaSettings } from "@/lib/dca-settings";
+type Revision={version:number;settings:DcaSettings;intent:"draft"|"next_cycle";createdAt:string};
+type Saved={latest:Revision|null;queued:Revision|null;history:Revision[]};
+const usd=(n:number)=>n.toLocaleString("en-US",{style:"currency",currency:"USD"});
+const fieldClass="mt-1 w-full rounded-lg border bg-background px-3 py-2";
+export function BotsOverview(){
+ const [settings,setSettings]=useState<DcaSettings>(structuredClone(defaultDcaSettings));
+ const [saved,setSaved]=useState<Saved>({latest:null,queued:null,history:[]});
+ const [loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+ const [reference,setReference]=useState(100),[confirmQueue,setConfirmQueue]=useState(false);
+ async function load(){
+   setBusy(true);setMessage("");
+   try{const r=await fetch("/api/bots/settings",{cache:"no-store"});const data=await r.json();if(!r.ok)throw new Error(data.message);
+    setSaved(data);setSettings(structuredClone(data.latest?.settings??defaultDcaSettings));setLoaded(true);
+   }catch(e){setMessage(e instanceof Error?e.message:"Unable to load settings.");}finally{setBusy(false);}
+ }
+ useEffect(()=>{void load();},[]);
+ const parsed=dcaSettingsSchema.safeParse(settings);
+ let ladder:ReturnType<typeof previewDca>=[];
+ if(parsed.success && reference>0){try{ladder=previewDca(parsed.data,reference);}catch{/* Error shown below. */}}
+ const dirty=JSON.stringify(settings)!==JSON.stringify(saved.latest?.settings??defaultDcaSettings);
+ function update<K extends keyof DcaSettings>(key:K,value:DcaSettings[K]){setSettings(s=>({...s,[key]:value}));setConfirmQueue(false);setMessage("");}
+ async function save(intent:"draft"|"next_cycle"){
+  setBusy(true);setMessage("");
+  try{const r=await fetch("/api/bots/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expectedVersion:saved.latest?.version??0,intent,settings})});
+   const data=await r.json();if(!r.ok)throw new Error(data.message);
+   const revision=data.saved as Revision;
+   setSaved(old=>({latest:revision,queued:intent==="next_cycle"?revision:old.queued,history:[revision,...old.history].slice(0,50)}));
+   setConfirmQueue(false);setMessage(`Version ${revision.version} ${intent==="draft"?"saved as a draft":"selected for the next cycle"}. Live trading remains off.`);
+  }catch(e){setMessage(e instanceof Error?e.message:"Unable to save settings.");}finally{setBusy(false);}
+ }
+ function number(key:keyof DcaSettings,label:string,hint?:string,step="any"){
+  return <label className="block text-sm" key={key}>{label}<input className={fieldClass} type="number" step={step} value={Number.isFinite(settings[key] as number)?settings[key] as number:""} onChange={e=>update(key,e.target.value===""?NaN:Number(e.target.value))}/>{hint&&<span className="mt-1 block text-xs text-muted-foreground">{hint}</span>}</label>;
+ }
+ function check(key:keyof DcaSettings,label:string){return <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(settings[key])} onChange={e=>update(key,e.target.checked)}/>{label}</label>;}
+ const card="rounded-xl border bg-card p-5 space-y-4";
+ return <section className="space-y-6">
+  <header><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">DCA Bots</h1><span className="rounded bg-amber-100 px-3 py-1 text-sm text-amber-950">Planning only · Live trading off</span></div><p className="mt-2 text-muted-foreground">Set the rules for buying Zcash in stages and taking profit.</p></header>
+  <div className={card}><h2 className="font-semibold">Execution setup pending</h2><p className="text-sm">Robinhood does not support a direct WealthBoard connection. We’re confirming how a supported trading service can use these settings. Saving or selecting a version does not place orders.</p><div className="grid gap-4 sm:grid-cols-3 text-sm"><p>Latest saved version<br/><strong>{saved.latest?`v${saved.latest.version}`:"None"}</strong>{dirty?" · Unsaved edits":""}</p><p>Selected for next cycle<br/><strong>{saved.queued?`v${saved.queued.version} · waiting for activation`:"None"}</strong></p><p>Version in use<br/><strong>None · No trading service connected</strong></p></div></div>
+  {message&&<p role="status" className="rounded-lg border p-3">{message}</p>}
+  {!loaded&&<Button onClick={load} disabled={busy}>{busy?"Loading saved settings…":"Retry loading settings"}</Button>}
+  <fieldset disabled={!loaded||busy} className="space-y-6 disabled:opacity-60">
+  <div className="grid gap-6 lg:grid-cols-2">
+   <div className={card}><h2 className="text-lg font-semibold">1. Entry and budget</h2><label className="block text-sm">Bot name<input className={fieldClass} maxLength={80} value={settings.name} onChange={e=>update("name",e.target.value)}/></label><p className="text-sm">Zcash · ZEC/USD · Dedicated Agentic account · Cash only</p><p className="text-xs text-muted-foreground">Example settings are a starting point for planning, not a recommendation or allocation of your deposit. One bot and one cycle at a time in this first version.</p><div className="grid gap-4 sm:grid-cols-2">{number("baseAmount","Initial buy ($)")}{number("budget","Maximum total cash ($)","Includes all buys and estimated buy fees. Reinvestment must stay within this cap.")}</div><label className="block text-sm">Entry condition<select className={fieldClass} value={settings.entry} onChange={e=>update("entry",e.target.value as DcaSettings["entry"])}><option value="immediate">Start when I activate the bot</option><option value="price_below">Wait for price at or below my limit</option></select></label>{settings.entry==="price_below"&&number("entryPrice","Entry limit ($ per ZEC)")}<p className="text-xs text-muted-foreground">Indicator-based entry and multiple assets are not available in this version.</p></div>
+   <div className={card}><h2 className="text-lg font-semibold">2. Additional buys</h2><div className="grid gap-4 sm:grid-cols-2">{number("safetyAmount","First additional buy ($)")}{number("firstDeviation","First price drop (%)","Measured from the initial fill.")}{number("sizeMultiplier","Buy-size multiplier","1 keeps each buy the same size; 2 doubles each successive buy.")}{number("spacingMultiplier","Drop-spacing multiplier","1 keeps equal gaps. Each successive gap is multiplied, then added to the total drop.")}{number("maxBuys","Maximum additional buys",undefined,"1")}{number("activeOrders","Maximum resting buy orders","How many additional buy orders may be open together.","1")}</div></div>
+   <div className={card}><h2 className="text-lg font-semibold">3. Profit targets</h2><p className="text-sm text-muted-foreground">Targets use the average cost including estimated fees. Sell allocations must total 100%.</p>{settings.targets.map((t,i)=><div key={i} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"><label className="text-sm">Target {i+1} profit (%)<input type="number" className={fieldClass} value={t.profit} onChange={e=>update("targets",settings.targets.map((x,j)=>j===i?{...x,profit:Number(e.target.value)}:x))}/></label><label className="text-sm">Sell allocation (%)<input type="number" className={fieldClass} value={t.allocation} onChange={e=>update("targets",settings.targets.map((x,j)=>j===i?{...x,allocation:Number(e.target.value)}:x))}/></label><Button variant="outline" aria-label={`Remove target ${i+1}`} disabled={settings.targets.length===1} onClick={()=>update("targets",settings.targets.filter((_,j)=>i!==j))}>Remove</Button></div>)}<Button variant="outline" disabled={settings.targets.length===4} onClick={()=>update("targets",[...settings.targets,{profit:settings.targets.at(-1)!.profit+1,allocation:0}])}>Add profit target</Button>{check("reinvest","Reinvest profits within the total cash cap")}{number("trailingProfit","Trailing final target (%)","0 disables trailing. Planning setting; automated execution is not available.")}</div>
+   <div className={card}><h2 className="text-lg font-semibold">4. Stops and repeat cycles</h2><div className="grid gap-4 sm:grid-cols-2">{number("stopLoss","Stop loss below average cost (%)","0 disables the stop. Not an active protective order.")}{number("maxHours","Maximum cycle duration (hours)","0 means no duration limit.","1")}{number("cooldownMinutes","Wait between cycles (minutes)",undefined,"1")}{number("feePercent","Estimated fee per side (%)","For planning only. Actual broker fees and rounding determine live prices.")}</div>{check("trailingStop","Trail the stop loss as price rises")}{check("stopAfterLoss","Stop new cycles after a losing cycle")}{check("repeat","Repeat after a completed cycle")}<p className="text-xs text-muted-foreground">Trailing exits, timed exits, reinvestment and repeat cycles require an online trading service and broker validation. None are active.</p></div>
+  </div>
+  {!parsed.success&&<div role="alert" className="rounded-lg border border-red-300 p-4 text-sm"><strong>Check these settings:</strong><ul className="list-disc pl-5">{parsed.error.issues.map((i,k)=><li key={k}>{i.path.join(".")}: {i.message}</li>)}</ul></div>}
+  <div className={card}><div className="flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-lg font-semibold">Buy-ladder preview</h2><p className="text-sm text-muted-foreground">Illustration assuming each buy fills fully at its limit. No orders are submitted.</p></div><label className="text-sm">Example initial fill ($ per ZEC)<input type="number" min="0.01" step="any" className={fieldClass} value={reference} onChange={e=>setReference(Number(e.target.value))}/></label></div>
+  {ladder.length>0?<><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b">{["Buy","Drop","Limit price","Buy amount","Total cash incl. fees","Avg. cost / ZEC","Sell target(s)"].map(x=><th className="p-2" key={x}>{x}</th>)}</tr></thead><tbody>{ladder.map(r=><tr key={r.step} className="border-b"><td className="p-2">{r.step?`Additional ${r.step}`:"Initial"}</td><td className="p-2">{r.drop.toFixed(2)}%</td><td className="p-2">{usd(r.price)}</td><td className="p-2">{usd(r.amount)}</td><td className="p-2">{usd(r.cost)}</td><td className="p-2">{usd(r.average)}</td><td className="p-2">{r.targets.map(usd).join(" / ")}</td></tr>)}</tbody></table></div><p className="text-sm">Maximum planned cash: <strong>{usd(ladder.at(-1)!.cost)}</strong> · Unallocated buffer: {usd(settings.budget-ladder.at(-1)!.cost)}</p><p className="text-xs text-muted-foreground">Targets show the price after each cumulative buy. Actual fills, partial sells and fees can change them. Price precision here is illustrative. For a limit entry, use your entry limit as the example price.</p></>:<p>Enter valid settings and a positive example price to see the ladder.</p>}</div>
+  <div className={card}><h2 className="text-lg font-semibold">Save and apply</h2><p className="text-sm">Save a draft to keep editing. Select a version for the next cycle to record your intended configuration; it waits until trading is available and you explicitly activate it.</p><div className="flex flex-wrap gap-3"><Button disabled={!parsed.success} onClick={()=>save("draft")}>Save draft</Button><Button variant="outline" disabled={!parsed.success} onClick={()=>setConfirmQueue(true)}>Review for next cycle</Button><Button variant="outline" disabled>Update current cycle — no active cycle</Button></div>{confirmQueue&&<div className="rounded-lg bg-muted p-4 space-y-3"><p>This will save version {(saved.latest?.version??0)+1} and replace {saved.queued?`v${saved.queued.version}`:"the empty selection"} for the next cycle. Maximum cash: {usd(settings.budget)}. Affected live orders: <strong>none</strong>. No trading starts.</p><Button onClick={()=>save("next_cycle")}>Confirm for next cycle</Button> <Button variant="outline" onClick={()=>setConfirmQueue(false)}>Keep editing</Button></div>}</div>
+  </fieldset>
+  <div className={card}><h2 className="text-lg font-semibold">Saved versions</h2>{saved.history.length===0?<p className="text-sm">No saved versions yet.</p>:<div className="max-h-72 overflow-auto space-y-3">{saved.history.map(r=><div key={r.version} className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 text-sm"><span><strong>v{r.version}</strong> · {r.intent==="draft"?"Draft":"Selected for next cycle"} · {new Date(r.createdAt).toLocaleString()} · {r.settings.name}</span><Button variant="outline" disabled={busy||dirty} onClick={()=>{setSettings(structuredClone(r.settings));setConfirmQueue(false);setMessage(`Loaded v${r.version} into the editor. Save to create a new version; the next-cycle selection is unchanged.`);}}>Load into editor</Button></div>)}</div>}<p className="text-xs text-muted-foreground">Loading history never changes a saved version. Save your edits before loading another version.</p></div>
+  <div className={card}><h2 className="text-lg font-semibold">Orders and performance</h2><p className="text-sm">Not connected to a trading service. Open orders, fills, average cost, actual fees and realized profit will appear here once synchronization is implemented. No live statistics are available yet.</p></div>
+ </section>;
 }

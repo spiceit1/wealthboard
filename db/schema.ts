@@ -340,3 +340,13 @@ export const robinhoodOauthAttempts = pgTable("robinhood_oauth_attempts", {
   verifierEncrypted: text("verifier_encrypted").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+// Immutable snapshots: saving never changes a version selected for a future cycle.
+export const dcaRevisions = pgTable("dca_revisions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  intent: varchar("intent", { length: 20 }).notNull(),
+  settings: jsonb("settings").$type<import("../lib/dca-settings").DcaSettings>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, t => ({ userVersion: uniqueIndex("dca_revisions_user_version_uidx").on(t.userId,t.version) }));
