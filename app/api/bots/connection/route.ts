@@ -3,10 +3,10 @@ import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { robinhoodConnections } from "@/db/schema";
+import { robinhoodConnections, robinhoodOauthAttempts } from "@/db/schema";
 import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { encryptSecret, decryptSecret } from "@/lib/secrets";
-import { ROBINHOOD_COOKIE, exchangeRobinhoodCode } from "@/lib/robinhood-oauth";
+import { newRobinhoodAuthorization, oauthHash, ROBINHOOD_COOKIE, exchangeRobinhoodCode } from "@/lib/robinhood-oauth";
 import { claimRobinhoodAuthorization } from "@/services/robinhoodAuthorization";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET() {
   const userId = await getAuthorizedUserId();
   if (!userId) return json({ message: "Sign in required." }, 401);
   const row = await db.query.robinhoodConnections.findFirst({ where: eq(robinhoodConnections.userId, userId), columns: { updatedAt: true, expiresAt: true } });
-  return json({ connected: !!row, directConnectionAvailable: false, connectedAt: row?.updatedAt, liveTradingEnabled: false });
+  return json({ connected: !!row, directConnectionAvailable: true, connectedAt: row?.updatedAt, liveTradingEnabled: false });
 }
 export async function POST(request: Request) {
   const userId = await getAuthorizedUserId();
@@ -28,7 +28,12 @@ export async function POST(request: Request) {
   const cookieStore = await cookies();
   try {
     if (parsed.data.action === "connect") {
-      return json({ message: "Direct website authorization is unavailable. Robinhood rejected this connection before returning to WealthBoard. No trading is enabled." }, 503);
+      const auth = newRobinhoodAuthorization();
+      const values = { userId, stateHash: oauthHash(auth.state), browserHash: oauthHash(auth.browser),
+        verifierEncrypted: encryptSecret(auth.verifier), expiresAt: new Date(Date.now() + 30 * 60_000) };
+      await db.insert(robinhoodOauthAttempts).values(values).onConflictDoUpdate({ target: robinhoodOauthAttempts.userId, set: values });
+      cookieStore.set(ROBINHOOD_COOKIE, auth.browser, { secure: true, httpOnly: true, sameSite: "lax", path: "/", maxAge: 1800 });
+      return json({ url: auth.url });
     }
     const browser = cookieStore.get(ROBINHOOD_COOKIE)?.value;
     if (!browser) return json({ message: "Connection session expired. Return to DCA Bots and connect again." }, 400);
