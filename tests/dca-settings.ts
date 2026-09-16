@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {defaultDcaSettings as defaults,dcaSettingsSchema,previewDca} from "../lib/dca-settings";
+import {defaultDcaSettings as defaults,dcaSettingsSchema,previewDca,previewReentry,withReentryDefaults} from "../lib/dca-settings";
 assert(dcaSettingsSchema.safeParse(defaults).success);
 const ladder=previewDca(defaults,100);
 assert.equal(ladder.length,5);assert.equal(ladder[4].price,88);assert.equal(ladder[4].cost,505);
@@ -10,3 +10,18 @@ for(const change of [{budget:499},{targets:[{profit:3,allocation:90}]},{targets:
 assert(dcaSettingsSchema.safeParse({...defaults,maxBuys:0,activeOrders:0}).success);
 assert.throws(()=>previewDca(defaults,0));
 console.log("DCA budget, compounded spacing, fees, targets and invalid-input tests passed.");
+
+const legacy = JSON.parse(JSON.stringify(defaults));
+delete legacy.reentryMode;delete legacy.reentryDip;delete legacy.reentryRebound;
+assert.equal(dcaSettingsSchema.parse(legacy).reentryMode,"after_cooldown");
+assert.equal(withReentryDefaults(legacy).reentryRebound,0.75);
+assert.equal(legacy.reentryMode,undefined,"Normalization must not mutate saved versions");
+const rebound={...defaults,reentryMode:"dip_rebound" as const};
+const example=previewReentry(rebound,100,95);
+assert.equal(example.ceiling,97);assert(Math.abs(example.trigger-95.7125)<1e-9);assert(example.eligibleRebound);
+assert(!previewReentry(rebound,100,97).eligibleRebound,"A shallow dip must not buy above the ceiling");
+assert(!previewReentry(rebound,100,98).dipped);
+assert(previewReentry(rebound,100,90).trigger<example.trigger,"New lows lower the threshold");
+assert.throws(()=>previewReentry(rebound,0,95));
+for(const change of [{reentryDip:0},{reentryRebound:0},{reentryDip:100},{reentryRebound:NaN},{reentryMode:"guess"}])assert(!dcaSettingsSchema.safeParse({...defaults,...change}).success);
+console.log("Re-entry thresholds, deeper lows, ceiling protection and legacy defaults passed.");

@@ -10,6 +10,8 @@ export const dcaSettingsSchema = z.object({
   targets: z.array(z.object({ profit: percent, allocation: z.number().positive().max(100) })).min(1).max(4),
   reinvest: z.boolean(), stopLoss: z.number().min(0).max(95), trailingProfit: z.number().min(0).max(50),
   trailingStop: z.boolean(), stopAfterLoss: z.boolean(), cooldownMinutes: z.number().int().min(0).max(10080),
+  reentryMode: z.enum(["after_cooldown", "dip_only", "dip_rebound"]).default("after_cooldown"),
+  reentryDip: percent.default(3), reentryRebound: percent.default(0.75),
   repeat: z.boolean(), maxHours: z.number().int().min(0).max(8760),
   feePercent: z.number().min(0).max(10),
 }).strict().superRefine((s, ctx) => {
@@ -29,6 +31,7 @@ export type DcaSettings = z.infer<typeof dcaSettingsSchema>;
 export const defaultDcaSettings: DcaSettings = {
   name:"Zcash DCA",symbol:"ZEC-USD",baseAmount:100,safetyAmount:100,firstDeviation:3,sizeMultiplier:1,spacingMultiplier:1,
   maxBuys:4,activeOrders:2,budget:600,entry:"immediate",entryPrice:0,targets:[{profit:3,allocation:100}],
+  reentryMode:"after_cooldown",reentryDip:3,reentryRebound:0.75,
   reinvest:false,stopLoss:0,trailingProfit:0,trailingStop:false,stopAfterLoss:true,cooldownMinutes:60,repeat:false,maxHours:0,feePercent:1,
 };
 // Planning arithmetic only. Execution must use broker precision, actual fees and confirmed fills.
@@ -43,4 +46,26 @@ export function previewDca(s: DcaSettings, referencePrice: number) {
     const average=cost/quantity;
     return {step:i,drop:deviation,price,amount,cost,average,targets:s.targets.map(t=>average*(1+t.profit/100)/(1-s.feePercent/100))};
   });
+}
+
+// Add defaults in memory only; historical records remain immutable.
+export function withReentryDefaults(s: DcaSettings): DcaSettings {
+  return { ...s, reentryMode: s.reentryMode ?? "after_cooldown", reentryDip: s.reentryDip ?? 3, reentryRebound: s.reentryRebound ?? 0.75 };
+}
+
+/** Illustration only. All cycle sells and leftover order cancellations must be
+ * confirmed before the cooldown starts. Track lows only after cooldown expiry.
+ * No decision here submits an order or predicts a reversal. */
+export function previewReentry(s: DcaSettings, previousSale: number, observedLow: number) {
+  if (![previousSale, observedLow].every(n => Number.isFinite(n) && n > 0)) {
+    throw new Error("Enter positive example sale and low prices.");
+  }
+  const ceiling = previousSale * (1 - s.reentryDip / 100);
+  const trigger = observedLow * (1 + s.reentryRebound / 100);
+  return {
+    ceiling, trigger,
+    deepestLowNeeded: ceiling / (1 + s.reentryRebound / 100),
+    dipped: observedLow <= ceiling,
+    eligibleRebound: observedLow <= ceiling && trigger <= ceiling,
+  };
 }
