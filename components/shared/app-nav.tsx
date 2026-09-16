@@ -11,6 +11,7 @@ const routes = [
   { href: "/accounts", label: "Accounts" },
   { href: "/credit-card", label: "Credit Card" },
   { href: "/holdings", label: "Holdings" },
+  { href: "/bots", label: "DCA Bots" },
   { href: "/connections", label: "Connections" },
   { href: "/sync-logs", label: "Sync Logs" },
   { href: "/settings", label: "Settings" },

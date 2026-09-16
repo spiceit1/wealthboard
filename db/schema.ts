@@ -324,3 +324,19 @@ export const usersRelations = relations(users, ({ many }) => ({
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+// Kept separate from Plaid's read-only credentials and financial totals.
+export const robinhoodConnections = pgTable("robinhood_connections", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  tokensEncrypted: text("tokens_encrypted").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const robinhoodOauthAttempts = pgTable("robinhood_oauth_attempts", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  stateHash: text("state_hash").notNull(),
+  browserHash: text("browser_hash").notNull(),
+  verifierEncrypted: text("verifier_encrypted").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
