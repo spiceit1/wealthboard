@@ -11,6 +11,8 @@ import { invalidateForManualHoldingChange } from "@/lib/query-invalidation";
 type Row = {
   id: string;
   symbol: string;
+  accountName?: string | null;
+  institutionName?: string | null;
   assetClass: "cash" | "stock" | "crypto";
   quantity: number;
   lastPrice: number;
@@ -128,6 +130,7 @@ export function PositionsTable({ rows }: Props) {
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Symbol
               </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Account</th>
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Quantity
               </th>
@@ -140,6 +143,7 @@ export function PositionsTable({ rows }: Props) {
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Price as of
               </th>
+              <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Account</th>
               <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Quantity synced
               </th>
@@ -152,6 +156,7 @@ export function PositionsTable({ rows }: Props) {
             {tableRows.map((row) => (
               <tr key={row.id} className="wb-table-row">
                 <td className="py-2 pr-4">{row.symbol}{!row.isManual && <span className="ml-2 text-xs text-muted-foreground">Plaid</span>}</td>
+                <td className="py-2 pr-4 text-xs">{row.accountName ?? "Manual holdings"}</td>
                 <td className="py-2 pr-4">
                   {editingId === row.id ? (
                     <input

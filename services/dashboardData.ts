@@ -500,6 +500,7 @@ export async function getAccountsOverview(userId: string) {
     const rows = await db
       .select({
         id: accounts.id,
+        providerAccountId: accounts.providerAccountId,
         institutionName: accounts.institutionName,
         name: accounts.name,
         type: accounts.type,
@@ -521,9 +522,9 @@ export async function getAccountsOverview(userId: string) {
       // Hide legacy empty placeholders, but show brokerages with imported positions even when cash is unknown.
       if (!bank && !cash && !owned.length) return [];
       const balance = bank ? Number(row.balance) : cash ? Number(cash.lastBalance) : null;
-      const investments = owned.reduce((sum,h)=>sum+Number(h.marketValue),0);
+      const investments = row.providerAccountId === 'manual:robinhood:8533' ? null : owned.reduce((sum,h)=>sum+Number(h.marketValue),0);
       const investmentDates = owned.map(h=>h.quantitySyncedAt ?? h.updatedAt);
-      return [{...row,balance,investments,total:balance===null ? null : balance+investments,
+      return [{...row,balance,investments,total:balance===null || investments===null ? null : balance+investments,
         balanceSource:bank ? row.balanceSource : cash?.balanceSource ?? 'unavailable',
         balanceAsOf:bank ? row.balanceAsOf : cash?.balanceAsOf ?? null,
         investmentsAsOf:latestIso(investmentDates),
@@ -539,6 +540,8 @@ export async function getHoldingsOverview(userId: string) {
     const rows = await db
       .select({
         id: holdings.id,
+        accountName: accounts.name,
+        institutionName: accounts.institutionName,
         symbol: holdings.symbol,
         name: holdings.name,
         assetClass: holdings.assetClass,
@@ -550,6 +553,7 @@ export async function getHoldingsOverview(userId: string) {
         updatedAt: holdings.updatedAt,
       })
       .from(holdings)
+      .leftJoin(accounts,and(eq(accounts.id,holdings.accountId),eq(accounts.userId,userId)))
       .where(and(eq(holdings.userId, userId), eq(holdings.includedInTotals, true)))
       .orderBy(asc(holdings.assetClass), asc(holdings.symbol));
 

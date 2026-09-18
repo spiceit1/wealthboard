@@ -15,7 +15,7 @@ type AccountRow = {
   name: string;
   type: string;
   balance: number | null;
-  investments: number;
+  investments: number | null;
   total: number | null;
   investmentsAsOf: string | null;
   investmentsSource: string;
@@ -125,8 +125,8 @@ export function AccountsOverview() {
                     <td className="py-2 pr-4">{row.name}</td>
                     <td className="py-2 pr-4 capitalize">{row.type.replace("_", " ")}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.balance === null ? "Not available" : formatUSD(row.balance)}{row.balanceSource === "manual" && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Manual</span>}</td>
-                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.investments)}</td>
-                    <td className="py-2 pr-4 tabular-nums">{row.total === null ? <span>{formatUSD(row.investments)}<span className="block text-xs text-muted-foreground">Cash not included</span></span> : formatUSD(row.total)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{row.investments === null ? <a className="underline" href="/connections">Holdings permission needed</a> : formatUSD(row.investments)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{row.total === null ? <span>{formatUSD((row.balance ?? 0) + (row.investments ?? 0))}<span className="block text-xs text-muted-foreground">{row.balance === null ? "Cash not included" : "Holdings not included"}</span></span> : formatUSD(row.total)}</td>
                     <td className="py-2 pr-4 text-xs">{row.balanceAsOf && <div>Cash: {formatDateTimeEastern(row.balanceAsOf)}</div>}{row.investmentsAsOf && <div>Holdings: {formatDateTimeEastern(row.investmentsAsOf)} · {row.investmentsSource === 'manual' ? 'Manual quantities' : 'Plaid'}</div>}</td>
                     <td className="py-2 pr-4">{row.balance !== null ? <ManualBalanceEditor accountId={row.id} name={`${row.name} cash`} balance={row.balance} /> : <a className="underline" href="/connections">Manage connection</a>}</td>
                   </tr>

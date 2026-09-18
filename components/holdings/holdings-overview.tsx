@@ -17,6 +17,8 @@ import { RelativeTime } from "@/components/shared/relative-time";
 type HoldingRow = {
   id: string;
   symbol: string;
+  accountName?: string | null;
+  institutionName?: string | null;
   name: string;
   assetClass: "cash" | "stock" | "crypto";
   quantity: number;
