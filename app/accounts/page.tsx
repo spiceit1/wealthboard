@@ -8,7 +8,7 @@ export default function AccountsPage() {
       <section className="space-y-1">
         <h1 className="wb-page-title">Accounts</h1>
         <p className="text-sm text-muted-foreground">
-          Bank balances and brokerage cash. Investment holdings are counted separately.
+          Bank and investment accounts, with cash and investments shown separately.
         </p>
       </section>
       <AccountsOverview />

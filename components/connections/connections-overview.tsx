@@ -185,7 +185,7 @@ export function ConnectionsOverview() {
                 </div>
                 <CardDescription>
                   {row.provider === "plaid" && providerRows.length > 0
-                    ? `${providerRows.length} linked institution${providerRows.length === 1 ? "" : "s"}`
+                    ? `${providerRows.length} linked connection${providerRows.length === 1 ? "" : "s"}`
                     : row.displayName}
                 </CardDescription>
               </CardHeader>
@@ -213,7 +213,7 @@ export function ConnectionsOverview() {
                 {row.provider === "plaid" && providerRows.length > 0 && (
                   <div className="space-y-2.5 rounded-lg border border-border/80 bg-muted/30 p-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Linked Plaid institutions
+                      Linked Plaid connections
                     </p>
                     <ul className="space-y-2.5">
                       {providerRows.map((item) => (
@@ -221,7 +221,7 @@ export function ConnectionsOverview() {
                           key={item.id}
                           className="flex flex-col gap-0.5 text-xs leading-relaxed sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-1.5"
                         >
-                          <span className="font-medium text-foreground">{item.displayName}</span>
+                          <span className="font-medium text-foreground">{item.displayName}{item.creditEnabled ? " — Credit card" : item.investmentsEnabled ? " — Investments & cash" : " — Bank accounts"}</span>
                           <span className="text-muted-foreground">
                             ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
                           </span>

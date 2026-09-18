@@ -513,9 +513,22 @@ export async function getAccountsOverview(userId: string) {
       .orderBy(asc(accounts.type), asc(accounts.name));
 
     const brokerageCash = await getBrokerageCashRows(userId);
-    return rows.filter(row => row.type === 'checking' || row.type === 'savings').map(row => ({...row,balance:Number(row.balance)}))
-      .concat(brokerageCash.map(row => ({id:row.id,institutionName:row.institutionName,name:row.name,type:'brokerage' as const,
-        currency:row.currency,balance:Number(row.lastBalance),balanceSource:row.balanceSource,balanceAsOf:row.balanceAsOf})));
+    const positions = await db.query.holdings.findMany({where:and(eq(holdings.userId,userId),eq(holdings.includedInTotals,true))});
+    return rows.flatMap(row => {
+      const bank = row.type === 'checking' || row.type === 'savings';
+      const cash = brokerageCash.find(c=>c.id===row.id);
+      const owned = positions.filter(h=>h.accountId===row.id && h.assetClass!=='cash');
+      // Hide legacy empty placeholders, but show brokerages with imported positions even when cash is unknown.
+      if (!bank && !cash && !owned.length) return [];
+      const balance = bank ? Number(row.balance) : cash ? Number(cash.lastBalance) : null;
+      const investments = owned.reduce((sum,h)=>sum+Number(h.marketValue),0);
+      const investmentDates = owned.map(h=>h.quantitySyncedAt ?? h.updatedAt);
+      return [{...row,balance,investments,total:balance===null ? null : balance+investments,
+        balanceSource:bank ? row.balanceSource : cash?.balanceSource ?? 'unavailable',
+        balanceAsOf:bank ? row.balanceAsOf : cash?.balanceAsOf ?? null,
+        investmentsAsOf:latestIso(investmentDates),
+        investmentsSource:owned.some(h=>h.isManual) ? 'manual' : 'plaid'}];
+    });
   } catch {
     return [];
   }

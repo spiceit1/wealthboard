@@ -14,7 +14,11 @@ type AccountRow = {
   institutionName: string;
   name: string;
   type: string;
-  balance: number;
+  balance: number | null;
+  investments: number;
+  total: number | null;
+  investmentsAsOf: string | null;
+  investmentsSource: string;
   balanceSource: string;
   balanceAsOf: string | null;
 };
@@ -35,17 +39,11 @@ export function AccountsOverview() {
     queryFn: fetchAccounts,
   });
 
-  const bankRows = useMemo(
-    () =>
-      (accountsQuery.data?.rows ?? []).filter(
-        (row) => row.type === "checking" || row.type === "savings" || row.type === "brokerage",
-      ),
-    [accountsQuery.data?.rows],
-  );
+  const accountRows = accountsQuery.data?.rows ?? [];
 
   const cashTotal = useMemo(
-    () => bankRows.reduce((sum, row) => sum + row.balance, 0),
-    [bankRows],
+    () => accountRows.reduce((sum, row) => sum + (row.balance ?? 0), 0),
+    [accountRows],
   );
 
   if (accountsQuery.isPending) {
@@ -99,12 +97,13 @@ export function AccountsOverview() {
         </Card>
       </div>
 
+      <p className="text-sm text-muted-foreground">Robinhood cash and quantities refresh with the daily sync at 9:00 a.m. Eastern, using the latest data Plaid supplies. Stock prices refresh separately. To share a new account, use <a className="underline" href="/connections">Connections → Robinhood → Manage linked accounts</a>, keeping your existing accounts selected. A Manual badge means automatic cash updates are not active for that row.</p>
       <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Cash Account Balances</CardTitle>
+          <CardTitle>Your Accounts</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">Brokerage balances show cash only; investments are counted separately. Manual balances stay unchanged until edited or replaced by a verified Plaid cash sync.</p>
+          <p className="mb-4 text-sm text-muted-foreground">Cash and investments are shown separately. These are the same holdings used on your dashboard—not additional assets. “Not available” means a balance has not been supplied, not zero.</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -112,25 +111,29 @@ export function AccountsOverview() {
                   <th className="py-2 pr-4">Institution</th>
                   <th className="py-2 pr-4">Account</th>
                   <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Balance</th>
-                  <th className="py-2 pr-4">As Of</th>
+                  <th className="py-2 pr-4">Cash</th>
+                  <th className="py-2 pr-4">Investments</th>
+                  <th className="py-2 pr-4">Total Value</th>
+                  <th className="py-2 pr-4">Last Updated</th>
                   <th className="py-2 pr-4">Update</th>
                 </tr>
               </thead>
               <tbody>
-                {bankRows.map((row) => (
+                {accountRows.map((row) => (
                   <tr key={row.id} className="wb-table-row">
                     <td className="py-2 pr-4">{row.institutionName}</td>
                     <td className="py-2 pr-4">{row.name}</td>
                     <td className="py-2 pr-4 capitalize">{row.type.replace("_", " ")}</td>
-                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.balance)}{row.balanceSource === "manual" && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Manual</span>}</td>
-                    <td className="py-2 pr-4">{formatDateTimeEastern(row.balanceAsOf)}</td>
-                    <td className="py-2 pr-4"><ManualBalanceEditor accountId={row.id} name={row.name} balance={row.balance} /></td>
+                    <td className="py-2 pr-4 tabular-nums">{row.balance === null ? "Not available" : formatUSD(row.balance)}{row.balanceSource === "manual" && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Manual</span>}</td>
+                    <td className="py-2 pr-4 tabular-nums">{formatUSD(row.investments)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{row.total === null ? <span>{formatUSD(row.investments)}<span className="block text-xs text-muted-foreground">Cash not included</span></span> : formatUSD(row.total)}</td>
+                    <td className="py-2 pr-4 text-xs">{row.balanceAsOf && <div>Cash: {formatDateTimeEastern(row.balanceAsOf)}</div>}{row.investmentsAsOf && <div>Holdings: {formatDateTimeEastern(row.investmentsAsOf)} · {row.investmentsSource === 'manual' ? 'Manual quantities' : 'Plaid'}</div>}</td>
+                    <td className="py-2 pr-4">{row.balance !== null ? <ManualBalanceEditor accountId={row.id} name={`${row.name} cash`} balance={row.balance} /> : <a className="underline" href="/connections">Manage connection</a>}</td>
                   </tr>
                 ))}
-                {!bankRows.length && (
+                {!accountRows.length && (
                   <tr className="wb-table-row">
-                    <td className="py-3 text-muted-foreground" colSpan={6}>
+                    <td className="py-3 text-muted-foreground" colSpan={8}>
                       No cash accounts found.
                     </td>
                   </tr>

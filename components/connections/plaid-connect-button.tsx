@@ -129,7 +129,7 @@ export function PlaidConnectButton({ disabled = false, itemId, purpose = "bank" 
 
   const buttonLabel = useMemo(() => {
     if (loading) return "Connecting...";
-    return itemId ? "Reconnect" : purpose === "credit" ? "Connect Robinhood credit card" : purpose === "investments" ? "Connect Robinhood / investments" : "Connect another institution with Plaid";
+    return itemId ? (purpose === "investments" ? "Manage linked accounts" : "Reconnect") : purpose === "credit" ? "Connect Robinhood credit card" : purpose === "investments" ? "Connect Robinhood / investments" : "Connect another institution with Plaid";
   }, [loading, itemId, purpose]);
 
   const beginLinkFlow = async () => {
@@ -180,7 +180,7 @@ export function PlaidConnectButton({ disabled = false, itemId, purpose = "bank" 
       <Button size="sm" onClick={beginLinkFlow} disabled={disabled || loading || (purpose === "investments" && !itemId && !manualChoice)}>
         {buttonLabel}
       </Button>
-      {success && <p className="text-xs">{purpose === "credit" ? "Card connection saved. Open the Credit Card tab to view charges. Initial history can take a few minutes." : purpose === "investments" ? "Investment connection saved. Import started; check Holdings and Sync Logs for progress." : "Bank authorization saved. Use Dashboard → Sync Now to refresh balances."}</p>}
+      {success && <p className="text-xs">{purpose === "credit" ? "Card connection saved. Open the Credit Card tab to view charges. Initial history can take a few minutes." : purpose === "investments" ? "Account permissions saved. Import started; check Accounts, Holdings and Sync Logs. Newly shared accounts can take time to become available." : "Bank authorization saved. Use Dashboard → Sync Now to refresh balances."}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
