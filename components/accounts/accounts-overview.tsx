@@ -37,6 +37,7 @@ export function AccountsOverview() {
   const accountsQuery = useQuery({
     queryKey: ["accounts-overview"],
     queryFn: fetchAccounts,
+    refetchInterval: 15_000,
   });
 
   const accountRows = accountsQuery.data?.rows ?? [];
@@ -97,7 +98,7 @@ export function AccountsOverview() {
         </Card>
       </div>
 
-      <p className="text-sm text-muted-foreground">Robinhood cash and quantities refresh with the daily sync at 9:00 a.m. Eastern, using the latest data Plaid supplies. Stock prices refresh separately. To share a new account, use <a className="underline" href="/connections">Connections → Robinhood → Manage linked accounts</a>, keeping your existing accounts selected. A Manual badge means automatic cash updates are not active for that row.</p>
+      <p className="text-sm text-muted-foreground">Robinhood cash and quantities refresh with the daily sync at 9:00 a.m. Eastern, using the latest data Plaid supplies. Stock prices refresh separately. To share a new account, use <a className="underline" href="/connections">Connections → Manage account access → Robinhood Investments & cash</a>, keeping your existing accounts selected. A Manual badge means automatic cash updates are not active for that row.</p>
       <Card className="wb-card-hover">
         <CardHeader>
           <CardTitle>Your Accounts</CardTitle>

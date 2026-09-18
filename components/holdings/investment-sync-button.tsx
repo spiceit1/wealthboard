@@ -13,5 +13,5 @@ export function InvestmentSyncButton() {
       setMessage('Import queued. Holdings will refresh automatically; see Sync Logs for results. Plaid may report recent trades after market close.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Import failed.'); }
     finally { setBusy(false); }
-  }}>{busy ? 'Starting import…' : 'Sync Investment Holdings'}</Button>{message && <p className="text-xs text-muted-foreground">{message}</p>}</div>;
+  }}>{busy ? 'Starting import…' : 'Sync balances & holdings now'}</Button>{message && <p className="text-xs text-muted-foreground">{message}</p>}</div>;
 }

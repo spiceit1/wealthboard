@@ -225,16 +225,29 @@ export function ConnectionsOverview() {
                           <span className="text-muted-foreground">
                             ({item.status}, {formatDateTimeEastern(item.lastSyncedAt, "never synced")})
                           </span>
-                          {item.externalId && <PlaidConnectButton itemId={item.externalId} purpose={item.creditEnabled ? "credit" : item.investmentsEnabled ? "investments" : "bank"} />}
+
                         </li>
                       ))}
                     </ul>
+                    <details className="border-t pt-2">
+                      <summary className="cursor-pointer text-sm">Manage account access</summary>
+                      <p className="mt-2 text-xs text-muted-foreground">Use only to share additional accounts or repair a connection. Refresh balances with Sync Now.</p>
+                      <div className="mt-3 space-y-3">{providerRows.map(item => <div key={item.id}>
+                        <p className="mb-1 text-xs font-medium">{item.displayName} — {item.creditEnabled ? "Credit card" : item.investmentsEnabled ? "Investments & cash" : "Bank accounts"}</p>
+                        {item.externalId && <PlaidConnectButton itemId={item.externalId} purpose={item.creditEnabled ? "credit" : item.investmentsEnabled ? "investments" : "bank"} />}
+                      </div>)}</div>
+                    </details>
                   </div>
                 )}
                 {row.provider === "plaid" && <>
-                  <PlaidConnectButton />
-                  <div className="border-t pt-3"><PlaidConnectButton purpose="credit" /></div>
-                  <div className="border-t pt-3"><PlaidConnectButton purpose="investments" /></div>
+                  <details className="border-t pt-3">
+                    <summary className="cursor-pointer text-sm">Add another connection</summary>
+                    <div className="mt-3 space-y-3">
+                      <PlaidConnectButton />
+                      {!providerRows.some(item => item.creditEnabled) && <PlaidConnectButton purpose="credit" />}
+                      {!providerRows.some(item => item.investmentsEnabled) && <PlaidConnectButton purpose="investments" />}
+                    </div>
+                  </details>
                   {providerRows.some(item => item.investmentsEnabled) && <InvestmentSyncButton />}
                 </>}
               </CardContent>
