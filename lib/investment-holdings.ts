@@ -31,5 +31,20 @@ export function normalizeInvestmentHoldings(response: InvestmentsHoldingsGetResp
       quantity: h.quantity, price: h.institution_price, value: h.institution_value,
       pricedAt: quoteDate && Number.isFinite(Date.parse(quoteDate)) ? new Date(quoteDate).toISOString() : null }];
   });
-  return { accounts: accounts.map(a => ({ accountId: a.account_id, name: a.name.slice(0,120) })), positions };
+  const cashPositions = accounts.flatMap(a => {
+    const cash = response.holdings.filter(h => h.account_id === a.account_id &&
+      (securities.get(h.security_id)?.is_cash_equivalent || securities.get(h.security_id)?.type === 'cash'));
+    // Prefer explicit cash holdings. Available cash is a fallback, never the total account value.
+    const value = cash.length ? cash.reduce((sum,h) => sum + h.institution_value,0) : a.balances?.available;
+    if (value == null) return [];
+    if (!Number.isFinite(value) || value < 0 ||
+      (a.balances?.iso_currency_code && a.balances.iso_currency_code !== 'USD') ||
+      cash.some(h => !Number.isFinite(h.institution_value) || h.institution_value < 0 ||
+        (h.iso_currency_code ?? securities.get(h.security_id)?.iso_currency_code) !== 'USD')) {
+      throw new Error('Invalid brokerage cash balance. Previous balances retained.');
+    }
+    return [{accountId:a.account_id,securityId:`cash:${a.account_id}`,symbol:'USD',name:'Brokerage cash',
+      assetClass:'cash' as const,quantity:value,price:1,value,pricedAt:new Date().toISOString()}];
+  });
+  return { accounts: accounts.map(a => ({ accountId: a.account_id, name: a.name.slice(0,120), ...(a.mask ? {mask:a.mask} : {}) })), positions:[...positions,...cashPositions] };
 }

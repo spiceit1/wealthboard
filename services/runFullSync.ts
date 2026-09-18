@@ -1,3 +1,4 @@
+import { getBrokerageCashRows } from "./brokerageCash";
 import { syncInvestmentHoldings } from "./investmentHoldings";
 import { dispatchBankSync, hasFreshCashAsOfNyDay } from '../lib/bank-sync';
 import { after } from "next/server";
@@ -366,7 +367,7 @@ async function persistSnapshot(
   options?: { persistDailySnapshot?: boolean; snapshotOverride?: SnapshotOverride | null },
 ): Promise<SyncSummary | null> {
   const persistDailySnapshot = options?.persistDailySnapshot ?? true;
-  const cashRows = await db.query.accounts.findMany({
+  const bankCashRows = await db.query.accounts.findMany({
     where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
   });
   const stockRows = await db.query.holdings.findMany({
@@ -376,6 +377,7 @@ async function persistSnapshot(
     where: and(eq(holdings.userId, userId), eq(holdings.assetClass, "crypto"), eq(holdings.includedInTotals, true)),
   });
 
+  const cashRows = [...bankCashRows, ...await getBrokerageCashRows(userId)];
   const liveCash = cashRows.reduce((sum, row) => sum + Number(row.lastBalance), 0);
   const liveStocks = stockRows.reduce((sum, row) => sum + Number(row.marketValue), 0);
   const liveCrypto = cryptoRows.reduce((sum, row) => sum + Number(row.marketValue), 0);

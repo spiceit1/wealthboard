@@ -38,7 +38,7 @@ export function AccountsOverview() {
   const bankRows = useMemo(
     () =>
       (accountsQuery.data?.rows ?? []).filter(
-        (row) => row.type === "checking" || row.type === "savings",
+        (row) => row.type === "checking" || row.type === "savings" || row.type === "brokerage",
       ),
     [accountsQuery.data?.rows],
   );
@@ -93,7 +93,7 @@ export function AccountsOverview() {
       <div className="grid gap-4 sm:grid-cols-1">
         <Card className="wb-card-hover">
           <CardHeader>
-            <CardTitle className="text-base">Bank Cash Total</CardTitle>
+            <CardTitle className="text-base">Bank & Brokerage Cash</CardTitle>
           </CardHeader>
           <CardContent className="text-xl font-semibold tabular-nums">{formatUSD(cashTotal)}</CardContent>
         </Card>
@@ -101,9 +101,10 @@ export function AccountsOverview() {
 
       <Card className="wb-card-hover">
         <CardHeader>
-          <CardTitle>Bank Account Balances</CardTitle>
+          <CardTitle>Cash Account Balances</CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="mb-4 text-sm text-muted-foreground">Brokerage balances show cash only; investments are counted separately. Manual balances stay unchanged until edited or replaced by a verified Plaid cash sync.</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -130,7 +131,7 @@ export function AccountsOverview() {
                 {!bankRows.length && (
                   <tr className="wb-table-row">
                     <td className="py-3 text-muted-foreground" colSpan={6}>
-                      No bank accounts found.
+                      No cash accounts found.
                     </td>
                   </tr>
                 )}

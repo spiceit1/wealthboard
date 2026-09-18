@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       language: "en",
       country_codes: getPlaidCountryCodes(),
       user: { client_user_id: userId },
-      ...(linked ? { access_token: linked.accessToken } : { products: payload?.purpose === "credit" ? [Products.Transactions] : payload?.purpose === "investments" ? [Products.Investments] : getPlaidProducts() }),
+      ...(linked ? { access_token: linked.accessToken, update: { account_selection_enabled: true } } : { products: payload?.purpose === "credit" ? [Products.Transactions] : payload?.purpose === "investments" ? [Products.Investments] : getPlaidProducts() }),
       ...(!linked && payload?.purpose === "credit" ? { transactions: { days_requested: 365 }, account_filters: { credit: { account_subtypes: [CreditAccountSubtype.CreditCard] } } } : {}),
       redirect_uri: getPlaidRedirectUri(),
     });

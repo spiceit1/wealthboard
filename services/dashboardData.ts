@@ -1,3 +1,4 @@
+import { getBrokerageCashRows } from "./brokerageCash";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
@@ -117,7 +118,7 @@ export async function getDemoUserId() {
 
 export async function getDashboardData(userId: string) {
   try {
-    const [cashAccounts, stockHoldings, cryptoHoldings] = await Promise.all([
+    const [bankAccounts, stockHoldings, cryptoHoldings] = await Promise.all([
       db.query.accounts.findMany({
         where: and(eq(accounts.userId, userId), inArray(accounts.type, ["checking", "savings"]), eq(accounts.includedInTotals, true)),
       }),
@@ -129,6 +130,7 @@ export async function getDashboardData(userId: string) {
       }),
     ]);
 
+    const cashAccounts = [...bankAccounts, ...await getBrokerageCashRows(userId)];
     const snapshots = await db
       .select({
         id: dailySnapshots.id,
@@ -510,10 +512,10 @@ export async function getAccountsOverview(userId: string) {
       .where(and(eq(accounts.userId, userId), eq(accounts.includedInTotals, true)))
       .orderBy(asc(accounts.type), asc(accounts.name));
 
-    return rows.map((row) => ({
-      ...row,
-      balance: Number(row.balance),
-    }));
+    const brokerageCash = await getBrokerageCashRows(userId);
+    return rows.filter(row => row.type === 'checking' || row.type === 'savings').map(row => ({...row,balance:Number(row.balance)}))
+      .concat(brokerageCash.map(row => ({id:row.id,institutionName:row.institutionName,name:row.name,type:'brokerage' as const,
+        currency:row.currency,balance:Number(row.lastBalance),balanceSource:row.balanceSource,balanceAsOf:row.balanceAsOf})));
   } catch {
     return [];
   }

@@ -1,7 +1,7 @@
 import { getAuthorizedUserId } from "@/lib/owner-auth";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { accounts } from "@/db/schema";
+import { accounts, holdings } from "@/db/schema";
 import { manualBalanceSchema } from "@/lib/manual-balance";
 import { NextResponse } from "next/server";
 
@@ -29,6 +29,13 @@ export async function PATCH(request: Request) {
   const parsed = manualBalanceSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ message: "Enter a valid balance with up to two decimal places." }, { status: 400 });
   try {
+    const account = await db.query.accounts.findFirst({where:and(eq(accounts.userId,userId),eq(accounts.id,parsed.data.accountId),eq(accounts.includedInTotals,true))});
+    if (account?.type === 'brokerage') {
+      const savedCash = await db.update(holdings).set({quantity:parsed.data.balance,marketValue:parsed.data.balance,lastPrice:'1',isManual:true,updatedAt:new Date()})
+        .where(and(eq(holdings.userId,userId),eq(holdings.accountId,account.id),eq(holdings.assetClass,'cash'),eq(holdings.includedInTotals,true))).returning({id:holdings.id});
+      if (!savedCash.length) return NextResponse.json({message:'Cash balance not found.'},{status:404});
+      return NextResponse.json({status:'ok'});
+    }
     const [saved] = await db.update(accounts).set({
       lastBalance: parsed.data.balance,
       balanceAsOf: new Date(),

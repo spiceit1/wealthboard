@@ -18,12 +18,18 @@ export async function persistInvestmentSnapshot(userId: string, itemId: string, 
       ON CONFLICT (user_id,provider_account_id) DO UPDATE SET connection_id=EXCLUDED.connection_id,name=EXCLUDED.name,institution_name=EXCLUDED.institution_name,included_in_totals=true,updated_at=now()`),
     db.execute(sql`UPDATE holdings h SET included_in_totals=false WHERE h.user_id=${userId} AND h.is_manual=false
       AND h.account_id IN (SELECT id FROM accounts WHERE connection_id=${conn.id})
+      AND (h.asset_class != 'cash' OR EXISTS (SELECT 1 FROM jsonb_array_elements(${positionJson}::jsonb) cp JOIN accounts ca ON ca.provider_account_id=cp->>'accountId' AND ca.user_id=${userId} WHERE ca.id=h.account_id AND cp->>'assetClass'='cash'))
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(${positionJson}::jsonb) p JOIN accounts a ON a.provider_account_id=p->>'accountId' AND a.user_id=${userId}
         WHERE a.id=h.account_id AND p->>'securityId'=h.plaid_security_id)`),
     db.execute(sql`INSERT INTO holdings (user_id,account_id,symbol,name,asset_class,quantity,last_price,market_value,is_manual,included_in_totals,plaid_security_id,quantity_synced_at,updated_at)
       SELECT ${userId}::uuid,a.id,p->>'symbol',p->>'name',(p->>'assetClass')::asset_class,(p->>'quantity')::numeric,(p->>'price')::numeric,(p->>'value')::numeric,false,true,p->>'securityId',now(),coalesce((p->>'pricedAt')::timestamptz,now())
       FROM jsonb_array_elements(${positionJson}::jsonb) p JOIN accounts a ON a.user_id=${userId} AND a.provider_account_id=p->>'accountId'
-      ON CONFLICT (user_id,account_id,plaid_security_id) DO UPDATE SET symbol=EXCLUDED.symbol,name=EXCLUDED.name,quantity=EXCLUDED.quantity,last_price=EXCLUDED.last_price,market_value=EXCLUDED.market_value,included_in_totals=true,quantity_synced_at=now(),updated_at=EXCLUDED.updated_at`),
+      ON CONFLICT (user_id,account_id,plaid_security_id) DO UPDATE SET is_manual=false,symbol=EXCLUDED.symbol,name=EXCLUDED.name,quantity=EXCLUDED.quantity,last_price=EXCLUDED.last_price,market_value=EXCLUDED.market_value,included_in_totals=true,quantity_synced_at=now(),updated_at=EXCLUDED.updated_at`),
+    // Retire the manually verified Agentic cash only after Plaid supplies cash for that same masked account.
+    db.execute(sql`UPDATE holdings SET included_in_totals=false WHERE user_id=${userId} AND is_manual=true AND asset_class='cash'
+      AND account_id IN (SELECT id FROM accounts WHERE user_id=${userId} AND provider_account_id='manual:robinhood:8533')
+      AND lower(${conn.displayName}) LIKE '%robinhood%'
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements(${accountJson}::jsonb) a JOIN jsonb_array_elements(${positionJson}::jsonb) p ON a->>'accountId'=p->>'accountId' WHERE a->>'mask'='8533' AND p->>'assetClass'='cash')`),
     // Only the explicitly selected replacement option retires manual stock entries.
     db.execute(sql`UPDATE holdings SET included_in_totals=false WHERE user_id=${userId} AND is_manual=true AND asset_class='stock'
       AND EXISTS (SELECT 1 FROM plaid_items WHERE user_id=${userId} AND item_id=${itemId} AND replace_manual_stocks=true)`),
