@@ -528,7 +528,7 @@ export async function getAccountsOverview(userId: string) {
         balanceSource:bank ? row.balanceSource : cash?.balanceSource ?? 'unavailable',
         balanceAsOf:bank ? row.balanceAsOf : cash?.balanceAsOf ?? null,
         investmentsAsOf:latestIso(investmentDates),
-        investmentsSource:owned.some(h=>h.isManual) ? 'manual' : 'plaid'}];
+        investmentsSource:owned.some(h=>h.plaidSecurityId?.startsWith('robinhood-verified:')) ? 'robinhood_verified' : owned.some(h=>h.isManual) ? 'manual' : 'plaid'}];
     });
   } catch {
     return [];
@@ -540,6 +540,7 @@ export async function getHoldingsOverview(userId: string) {
     const rows = await db
       .select({
         id: holdings.id,
+        accountId: accounts.id,
         accountName: accounts.name,
         institutionName: accounts.institutionName,
         symbol: holdings.symbol,
@@ -550,6 +551,7 @@ export async function getHoldingsOverview(userId: string) {
         marketValue: holdings.marketValue,
         isManual: holdings.isManual,
         quantitySyncedAt: holdings.quantitySyncedAt,
+        plaidSecurityId: holdings.plaidSecurityId,
         updatedAt: holdings.updatedAt,
       })
       .from(holdings)

@@ -98,7 +98,7 @@ export function AccountsOverview() {
         </Card>
       </div>
 
-      <p className="text-sm text-muted-foreground">Robinhood cash and quantities refresh with the daily sync at 9:00 a.m. Eastern, using the latest data Plaid supplies. Stock prices refresh separately. To share a new account, use <a className="underline" href="/connections">Connections → Manage account access → Robinhood Investments & cash</a>, keeping your existing accounts selected. A Manual badge means automatic cash updates are not active for that row.</p>
+      <p className="text-sm text-muted-foreground">Robinhood cash and quantities refresh with the daily sync at 9:00 a.m. Eastern, using the latest data Plaid supplies. Stock prices refresh separately. To share a new account, use <a className="underline" href="/connections">Connections → Manage account access → Robinhood Investments & cash</a>, keeping your existing accounts selected. Plaid checked times show when data was retrieved; the broker data may be older. Verified Robinhood balances are retained until Plaid matches. A Manual badge means automatic cash updates are not active for that row.</p>
       <Card className="wb-card-hover">
         <CardHeader>
           <CardTitle>Your Accounts</CardTitle>
@@ -115,7 +115,7 @@ export function AccountsOverview() {
                   <th className="py-2 pr-4">Cash</th>
                   <th className="py-2 pr-4">Investments</th>
                   <th className="py-2 pr-4">Total Value</th>
-                  <th className="py-2 pr-4">Last Updated</th>
+                  <th className="py-2 pr-4">Last Checked / Verified</th>
                   <th className="py-2 pr-4">Update</th>
                 </tr>
               </thead>
@@ -128,7 +128,7 @@ export function AccountsOverview() {
                     <td className="py-2 pr-4 tabular-nums">{row.balance === null ? "Not available" : formatUSD(row.balance)}{row.balanceSource === "manual" && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Manual</span>}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.investments === null ? <a className="underline" href="/connections">Holdings permission needed</a> : formatUSD(row.investments)}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.total === null ? <span>{formatUSD((row.balance ?? 0) + (row.investments ?? 0))}<span className="block text-xs text-muted-foreground">{row.balance === null ? "Cash not included" : "Holdings not included"}</span></span> : formatUSD(row.total)}</td>
-                    <td className="py-2 pr-4 text-xs">{row.balanceAsOf && <div>Cash: {formatDateTimeEastern(row.balanceAsOf)}</div>}{row.investmentsAsOf && <div>Holdings: {formatDateTimeEastern(row.investmentsAsOf)} · {row.investmentsSource === 'manual' ? 'Manual quantities' : 'Plaid'}</div>}</td>
+                    <td className="py-2 pr-4 text-xs">{row.balanceAsOf && <div>Cash: {formatDateTimeEastern(row.balanceAsOf)} · {row.balanceSource === "robinhood_verified" ? "Verified with Robinhood · awaiting Plaid" : row.balanceSource === "manual" ? "Manual" : "Plaid checked"}</div>}{row.investmentsAsOf && <div>Holdings: {formatDateTimeEastern(row.investmentsAsOf)} · {row.investmentsSource === 'robinhood_verified' ? 'Verified with Robinhood · awaiting Plaid' : row.investmentsSource === 'manual' ? 'Manual quantities' : 'Plaid'}</div>}</td>
                     <td className="py-2 pr-4">{row.balance !== null ? <ManualBalanceEditor accountId={row.id} name={`${row.name} cash`} balance={row.balance} /> : <a className="underline" href="/connections">Manage connection</a>}</td>
                   </tr>
                 ))}

@@ -3,12 +3,22 @@ import { db } from '@/db/client';
 import { accounts, connections, holdings, plaidItems } from '@/db/schema';
 import { getPlaidClient } from '@/lib/plaid';
 import { normalizeInvestmentHoldings, type InvestmentSnapshot } from '@/lib/investment-holdings';
+import { VERIFIED_PREFIX, matchesVerifiedPositions } from '@/lib/verified-investments';
 import { getPlaidAccessTokensForUser } from './plaidTokens';
 
 // All mutations are one transaction. A failed/partial provider response never clears positions.
 export async function persistInvestmentSnapshot(userId: string, itemId: string, snapshot: InvestmentSnapshot) {
   const conn = await db.query.connections.findFirst({ where: and(eq(connections.userId,userId),eq(connections.provider,'plaid'),eq(connections.externalId,itemId)) });
   if (!conn) throw new Error('Investment connection not found.');
+  const active = await db.select({accountId:accounts.providerAccountId,securityId:holdings.plaidSecurityId,
+    symbol:holdings.symbol,assetClass:holdings.assetClass,quantity:holdings.quantity})
+    .from(holdings).innerJoin(accounts,eq(accounts.id,holdings.accountId))
+    .where(and(eq(holdings.userId,userId),eq(accounts.connectionId,conn.id),eq(holdings.includedInTotals,true)));
+  const protectedIds = [...new Set(active.filter(p=>p.securityId?.startsWith(VERIFIED_PREFIX)).map(p=>p.accountId))]
+    .filter(id=>!matchesVerifiedPositions(active.filter(p=>p.accountId===id).map(p=>({...p,quantity:Number(p.quantity)})),snapshot.positions.filter(p=>p.accountId===id)));
+  // Keep the entire account consistent: never mix old Plaid cash with verified stocks.
+  snapshot = {...snapshot,accounts:snapshot.accounts.filter(a=>!protectedIds.includes(a.accountId)),
+    positions:snapshot.positions.filter(p=>!protectedIds.includes(p.accountId))};
   const accountJson = JSON.stringify(snapshot.accounts.map(account => ({...account,
     name: conn.displayName.toLowerCase().includes('robinhood') && account.mask === '8533' ? 'Agentic ••••8533' : account.mask ? `${account.name} ••••${account.mask}`.slice(0,120) : account.name
   })));
@@ -19,7 +29,7 @@ export async function persistInvestmentSnapshot(userId: string, itemId: string, 
       FROM jsonb_array_elements(${accountJson}::jsonb) x
       ON CONFLICT (user_id,provider_account_id) DO UPDATE SET connection_id=EXCLUDED.connection_id,name=EXCLUDED.name,institution_name=EXCLUDED.institution_name,included_in_totals=true,updated_at=now()`),
     db.execute(sql`UPDATE holdings h SET included_in_totals=false WHERE h.user_id=${userId} AND h.is_manual=false
-      AND h.account_id IN (SELECT id FROM accounts WHERE connection_id=${conn.id})
+      AND h.account_id IN (SELECT id FROM accounts WHERE connection_id=${conn.id} AND provider_account_id IN (SELECT x->>'accountId' FROM jsonb_array_elements(${accountJson}::jsonb) x))
       AND (h.asset_class != 'cash' OR EXISTS (SELECT 1 FROM jsonb_array_elements(${positionJson}::jsonb) cp JOIN accounts ca ON ca.provider_account_id=cp->>'accountId' AND ca.user_id=${userId} WHERE ca.id=h.account_id AND cp->>'assetClass'='cash'))
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(${positionJson}::jsonb) p JOIN accounts a ON a.provider_account_id=p->>'accountId' AND a.user_id=${userId}
         WHERE a.id=h.account_id AND p->>'securityId'=h.plaid_security_id)`),

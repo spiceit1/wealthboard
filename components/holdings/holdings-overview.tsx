@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
@@ -17,6 +17,7 @@ import { RelativeTime } from "@/components/shared/relative-time";
 type HoldingRow = {
   id: string;
   symbol: string;
+  accountId?: string | null;
   accountName?: string | null;
   institutionName?: string | null;
   name: string;
@@ -76,7 +77,12 @@ export function HoldingsOverview() {
     refetchInterval: 15_000,
   });
 
-  const rows = useMemo(() => holdingsQuery.data?.rows ?? [], [holdingsQuery.data?.rows]);
+  const [accountFilter,setAccountFilter] = useState('all');
+  const allRows = useMemo(() => holdingsQuery.data?.rows ?? [], [holdingsQuery.data?.rows]);
+  const accountOptions = useMemo(() => [...new Map(allRows.map(row=>[row.accountId ?? 'unassigned', {
+    id:row.accountId ?? 'unassigned',name:row.accountName ?? 'Other / manual holdings'
+  }])).values()],[allRows]);
+  const rows = useMemo(() => allRows.filter(row=>accountFilter==='all' || (row.accountId ?? 'unassigned')===accountFilter),[allRows,accountFilter]);
   const stockRows = useMemo(() => rows.filter((row) => row.assetClass === "stock"), [rows]);
   const cryptoRows = useMemo(() => rows.filter((row) => row.assetClass === "crypto"), [rows]);
   const stockTotal = useMemo(() => stockRows.reduce((sum, row) => sum + row.marketValue, 0), [stockRows]);
@@ -91,8 +97,8 @@ export function HoldingsOverview() {
     const todayNy = nyDateKeyFromIso(new Date().toISOString());
     return stockRows.filter((row) => row.updatedAt && nyDateKeyFromIso(row.updatedAt) === todayNy).length;
   }, [stockRows]);
-  const stocksChangeSinceOpen = holdingsQuery.data?.stocksChangeSinceOpen ?? null;
-  const cryptoChangeSinceOpen = holdingsQuery.data?.cryptoChangeSinceOpen ?? null;
+  const stocksChangeSinceOpen = accountFilter==='all' ? holdingsQuery.data?.stocksChangeSinceOpen ?? null : null;
+  const cryptoChangeSinceOpen = accountFilter==='all' ? holdingsQuery.data?.cryptoChangeSinceOpen ?? null : null;
   const changeSinceLabel = holdingsQuery.data?.changeSinceLabel ?? "since 9:00 ET";
   const latestSyncAt = holdingsQuery.data?.latestSyncAt ?? null;
 
@@ -171,6 +177,24 @@ export function HoldingsOverview() {
         {rows.some(row => !row.isManual) && <InvestmentSyncButton />}
       </section>
 
+      <Card>
+        <CardHeader><CardTitle>View by account</CardTitle><CardDescription>Choose an account to filter the positions and totals below. Investment totals exclude cash.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <label className="block">Account
+            <select className="ml-3 rounded border bg-background p-2" value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}>
+              <option value="all">All accounts</option>
+              {accountOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-3">
+            {accountOptions.map(a=><button key={a.id} type="button" aria-pressed={accountFilter===a.id} onClick={()=>setAccountFilter(a.id)} className={`rounded-lg border p-3 text-left ${accountFilter===a.id ? 'border-blue-600 bg-blue-50 text-slate-900' : ''}`}>
+              <span className="block text-sm">{a.name}</span>
+              <strong className="block">{formatUSD(allRows.filter(r=>(r.accountId ?? 'unassigned')===a.id && r.assetClass!=='cash').reduce((sum,r)=>sum+r.marketValue,0))}</strong>
+            </button>)}
+          </div>
+          <p className="font-semibold">{accountFilter==='all' ? 'All accounts' : accountOptions.find(a=>a.id===accountFilter)?.name} — investments: {formatUSD(stockTotal+cryptoTotal)}</p>
+        </CardContent>
+      </Card>
       <ManualHoldingEditor />
 
       <div className="grid gap-4 sm:grid-cols-2">

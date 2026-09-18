@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { matchesVerifiedPositions as matches } from '../lib/verified-investments';
+const stock = {symbol:'SPY',assetClass:'stock',quantity:6.567642};
+const cash = {symbol:'USD',assetClass:'cash',quantity:0};
+const verified = [stock,cash];
+assert.equal(matches(verified,[cash,stock]),true);
+assert.equal(matches(verified,[{...cash,quantity:10000}]),false);
+assert.equal(matches(verified,[stock]),false);
+assert.equal(matches(verified,[cash,{...stock,quantity:6}]),false);
+assert.equal(matches(verified,[cash,stock,{...stock,symbol:'QQQ'}]),false);
+assert.equal(matches(verified,[cash,{...stock,quantity:NaN}]),false);
+assert.equal(matches([cash],[cash]),true);
+console.log('Verified reconciliation tests passed');

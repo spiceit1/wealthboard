@@ -19,6 +19,7 @@ type Row = {
   marketValue: number;
   updatedAt?: string | null;
   isManual: boolean;
+  plaidSecurityId?: string | null;
   quantitySyncedAt?: string | null;
 };
 
@@ -155,7 +156,7 @@ export function PositionsTable({ rows }: Props) {
           <tbody>
             {tableRows.map((row) => (
               <tr key={row.id} className="wb-table-row">
-                <td className="py-2 pr-4">{row.symbol}{!row.isManual && <span className="ml-2 text-xs text-muted-foreground">Plaid</span>}</td>
+                <td className="py-2 pr-4">{row.symbol}{!row.isManual && <span className="ml-2 text-xs text-muted-foreground">{row.plaidSecurityId?.startsWith('robinhood-verified:') ? 'Robinhood verified · awaiting Plaid' : 'Plaid'}</span>}</td>
                 <td className="py-2 pr-4 text-xs">{row.accountName ?? "Manual holdings"}</td>
                 <td className="py-2 pr-4">
                   {editingId === row.id ? (
@@ -230,7 +231,7 @@ export function PositionsTable({ rows }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Managed by Plaid</span>
+                    <span className="text-xs text-muted-foreground">{row.plaidSecurityId?.startsWith('robinhood-verified:') ? 'Verified with Robinhood' : 'Managed by Plaid'}</span>
                   )}
                 </td>}
               </tr>
@@ -252,7 +253,7 @@ export function PositionsTable({ rows }: Props) {
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground">
-        Price as of is the time of the market quote, which may be delayed. Quantity synced is when your share count was imported from Plaid. All times are Eastern.
+        Price as of is the time of the market quote, which may be delayed. Quantity synced is when your share count was imported or verified directly with Robinhood. All times are Eastern.
       </p>
       {renderTable("Stocks", stockRows)}
       {renderTable("Crypto", cryptoRows)}
