@@ -9,6 +9,7 @@ const routes = [
   { href: "/", label: "Dashboard" },
   { href: "/history", label: "History" },
   { href: "/accounts", label: "Accounts" },
+  { href: "/bank-transactions", label: "Bank Transactions" },
   { href: "/credit-card", label: "Credit Card" },
   { href: "/holdings", label: "Holdings" },
   { href: "/bots", label: "DCA Bots" },

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppNav } from "@/components/shared/app-nav";
 import { AccountsOverview } from "@/components/accounts/accounts-overview";
 
@@ -11,6 +12,7 @@ export default function AccountsPage() {
           Bank and investment accounts, with cash and investments shown separately.
         </p>
       </section>
+      <Link href="/bank-transactions" className="inline-block underline">View bank transactions →</Link>
       <AccountsOverview />
     </main>
   );
