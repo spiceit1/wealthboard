@@ -296,8 +296,8 @@ async function refreshHoldingValuations(userId: string) {
       for (const symbol of cryptoSymbols) {
         if (!cryptoPriceMap.has(symbol)) failures.push(`${symbol}: crypto quote unavailable`);
       }
-    } catch {
-      failures.push(`Crypto quotes unavailable for ${cryptoSymbols.join(", ")}`);
+    } catch (error) {
+      failures.push(`Crypto quotes unavailable for ${cryptoSymbols.join(", ")}: ${error instanceof Error ? error.message : "Unknown CoinGecko error"}`);
     }
   }
 

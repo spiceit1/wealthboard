@@ -485,6 +485,7 @@ export async function getSyncRuns(userId: string, options?: { limit?: number; of
       runs: runs.map((run) => ({
         ...run,
         lastEvent: lastEventByRun.get(run.id)?.message ?? null,
+        events: events.filter((event) => event.syncRunId === run.id),
       })),
     };
   } catch {

@@ -1,5 +1,6 @@
 "use client";
 
+import { describeSyncRun } from "@/lib/sync-reporting";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -17,6 +18,7 @@ type SyncRunRow = {
   completedAt: string | null;
   errorMessage: string | null;
   lastEvent: string | null;
+  events: { message: string; createdAt: string | null }[];
 };
 
 type SyncRunsResponse = {
@@ -41,6 +43,7 @@ export function SyncLogsOverview() {
   const runsQuery = useQuery({
     queryKey: ["sync-runs-overview", page, pageSize],
     queryFn: () => fetchSyncRuns(page, pageSize),
+    refetchInterval: 30_000,
   });
 
   const runs = runsQuery.data?.runs ?? [];
@@ -88,7 +91,7 @@ export function SyncLogsOverview() {
       <section className="space-y-2">
         <h1 className="wb-page-title">Sync Logs</h1>
         <p className="text-sm text-muted-foreground">
-          Persisted sync run history with trigger, status, and latest event.
+          See what updated and what failed. Partially updated means some data was saved, but the sync did not finish successfully.
         </p>
       </section>
 
@@ -114,12 +117,14 @@ export function SyncLogsOverview() {
                     Completed
                   </th>
                   <th className="px-3 py-2.5 pr-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Latest Event
+                    Result & Details
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {runs.map((run) => (
+                {runs.map((run) => {
+                  const report = describeSyncRun(run);
+                  return (
                   <tr key={run.id} className="wb-table-row">
                     <td className="px-3 py-2.5 pr-4">{formatDateTimeEastern(run.startedAt)}</td>
                     <td className="px-3 py-2.5 pr-4 capitalize">{run.trigger}</td>
@@ -127,16 +132,32 @@ export function SyncLogsOverview() {
                       className={cn(
                         "px-3 py-2.5 pr-4 capitalize",
                         run.status === "completed" && "text-emerald-600",
-                        run.status === "failed" && "text-red-500",
+                        run.status === "failed" && (report.partial ? "text-amber-600" : "text-red-500"),
                         (run.status === "running" || run.status === "pending") && "text-amber-600"
                       )}
                     >
-                      {run.status}
+                      {report.label}
                     </td>
                     <td className="px-3 py-2.5 pr-4">{formatDateTimeEastern(run.completedAt)}</td>
-                    <td className="px-3 py-2.5 pr-4">{run.lastEvent ?? run.errorMessage ?? "-"}</td>
+                    <td className="min-w-72 max-w-xl px-3 py-2.5 pr-4">
+                      {report.progress && <p className="mb-1">{report.progress}</p>}
+                      <p className="break-words">{report.detail}</p>
+                      {!!run.events?.length && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">View sync details</summary>
+                          <ol className="mt-2 space-y-1 text-xs">
+                            {run.events.map((event, index) => (
+                              <li key={index}>
+                                <span className="text-muted-foreground">{formatDateTimeEastern(event.createdAt)}</span>{" — "}{event.message}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {!runs.length && (
                   <tr className="wb-table-row">
                     <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
