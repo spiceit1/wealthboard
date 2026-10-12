@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { acceptInvite, getUser, refreshSession, onAuthChange, handleAuthCallback, login, logout, requestPasswordRecovery, signup, updateUser } from "@netlify/identity";
 import { Button } from "@/components/ui/button";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const queryClient = useQueryClient();
   const [state, setState] = useState<"loading" | "login" | "mfa" | "ready" | "password">("loading");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +24,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     const response = await fetch("/api/auth/session", { cache: "no-store" });
     if (!response.ok) throw new Error("Unable to check sign-in status.");
     const session = await response.json();
-    if (session.authorized) { setState("ready"); return; }
+    if (session.authorized) { await queryClient.invalidateQueries(); setMessage(""); setState("ready"); return; }
     if (!session.signedIn) { setState("login"); return; }
     setState("mfa");
     const setup = await fetch("/api/auth/mfa", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "setup" }) });
@@ -46,6 +48,31 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     })();
     return unsubscribe;
   }, []);
+  useEffect(() => {
+    if (state !== "ready") return;
+    const originalFetch = window.fetch;
+    let checking = false;
+    let disposed = false;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      const input = args[0];
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.href);
+      if (response.status === 401 && url.origin === window.location.origin && url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/") && !checking && !disposed) {
+        checking = true;
+        setCode("");
+        setMessage("Your session has expired. Enter the six-digit code from your authenticator app to continue. If prompted, sign in again first.");
+        setState("loading");
+        void check().catch(() => {
+          setMessage("Your session has expired. Please sign in again to continue.");
+          setState("login");
+        });
+      }
+      return response;
+    };
+    return () => { disposed = true; window.fetch = originalFetch; };
+    // Install once per authorized session; check uses the current query client.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   async function perform(action: () => Promise<void>) {
     setBusy(true); setMessage("");
     try { await action(); } catch (error) { setMessage(error instanceof Error ? error.message : "Please try again."); }

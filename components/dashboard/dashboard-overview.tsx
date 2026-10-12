@@ -354,9 +354,9 @@ export function DashboardOverview() {
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="pt-6">
             <p className="text-sm text-destructive">
-              Unable to load dashboard data. Run <code className="rounded bg-muted px-1 py-0.5 text-xs">npm run db:push</code> and{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">npm run db:seed</code>, then refresh.
+              We couldn’t load your dashboard. Please try again. If your session has expired, sign in and enter your authenticator code to continue.
             </p>
+            <Button className="mt-3" variant="outline" onClick={() => void dashboardQuery.refetch()}>Try again</Button>
           </CardContent>
         </Card>
       </section>
