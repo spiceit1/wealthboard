@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +47,30 @@ export function HistoryDetailOverview({ date }: Props) {
     queryFn: () => fetchDetail(date),
   });
 
+  const historyQuery = useQuery({
+    queryKey: ["history-overview"],
+    queryFn: async (): Promise<{ rows: { date: string }[] }> => {
+      const response = await fetch("/api/history", { cache: "no-store" });
+      if (!response.ok) throw new Error("Failed to load snapshot dates.");
+      return response.json();
+    },
+  });
+  const dates = [...new Set(historyQuery.data?.rows.map((row) => row.date) ?? [])].sort();
+  const previousDate = dates.filter((value) => value < date).at(-1);
+  const nextDate = dates.find((value) => value > date);
+  const navigation = (
+    <nav aria-label="Daily snapshot navigation" className="flex flex-wrap items-center gap-2">
+      {previousDate ? (
+        <Button asChild variant="outline"><Link href={`/history/${previousDate}`} aria-label={`Previous day: ${previousDate}`}><ChevronLeft aria-hidden="true" />Previous</Link></Button>
+      ) : <Button variant="outline" disabled><ChevronLeft aria-hidden="true" />Previous</Button>}
+      {nextDate ? (
+        <Button asChild variant="outline"><Link href={`/history/${nextDate}`} aria-label={`Next day: ${nextDate}`}>Next<ChevronRight aria-hidden="true" /></Link></Button>
+      ) : <Button variant="outline" disabled>Next<ChevronRight aria-hidden="true" /></Button>}
+      <Link href="/history" className="text-sm underline underline-offset-4">All history</Link>
+      {historyQuery.isError && <span className="text-sm text-muted-foreground">Unable to load navigation. <button type="button" className="underline" onClick={() => historyQuery.refetch()}>Try again</button></span>}
+    </nav>
+  );
+
   if (detailQuery.isPending) {
     return (
       <section className="space-y-6 wb-fade-in">
@@ -77,6 +103,8 @@ export function HistoryDetailOverview({ date }: Props) {
   const detail = detailQuery.data?.detail ?? null;
   if (!detail) {
     return (
+      <div className="space-y-4">
+        {navigation}
       <p className="text-sm text-muted-foreground">
         Snapshot not found for {date}. Go back to{" "}
         <Link href="/history" className="underline underline-offset-4">
@@ -84,6 +112,7 @@ export function HistoryDetailOverview({ date }: Props) {
         </Link>
         .
       </p>
+      </div>
     );
   }
 
@@ -96,7 +125,10 @@ export function HistoryDetailOverview({ date }: Props) {
   return (
     <section className="space-y-6 wb-fade-in">
       <div className="space-y-2">
-        <h1 className="wb-page-title">Snapshot Detail: {date}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="wb-page-title">Snapshot Detail: {date}</h1>
+          {navigation}
+        </div>
         <p className="text-sm text-muted-foreground">
           Net worth:{" "}
           <span className="font-medium tabular-nums text-foreground">
