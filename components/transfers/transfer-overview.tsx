@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { formatUSD } from '@/lib/formatters';
 type Row={id:string;amount:string;sourceLabel:string;destinationLabel:string;status:string;transferDate:string;evidence:string};
-export function TransferOverview() {
+export function TransferOverview({ compact = false }: { compact?: boolean }) {
  const client=useQueryClient();
  const query=useQuery({queryKey:['transfers'],queryFn:async():Promise<{rows:Row[];total:number}>=>{const r=await fetch('/api/transfers',{cache:'no-store'});if(!r.ok)throw Error('Unable to load transfer reconciliation.');return r.json();},refetchInterval:30000});
  const update=useMutation({mutationFn:async({id,action}:{id:string;action:string})=>{const r=await fetch('/api/transfers',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});if(!r.ok)throw Error('Could not update transfer. Refresh and try again.');},onSuccess:()=>client.invalidateQueries()});
@@ -11,6 +11,11 @@ export function TransferOverview() {
  const rows=query.data?.rows ?? [];
  if(!rows.length)return null;
  const active=rows.filter(r=>['in_transit','needs_review'].includes(r.status));
+ if(compact) {
+  if(!active.length)return null;
+  const needsReview=active.some(row=>row.status==='needs_review');
+  return <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2 text-sm"><p><strong>Cash in transit: {formatUSD(query.data?.total ?? 0)}</strong><span className="text-muted-foreground"> · {needsReview ? 'Some transfers need review' : 'Included in net worth · checked automatically when banks sync'}</span></p><a href="/accounts" className="shrink-0 underline">Transfer details</a></div>;
+ }
  return <div className="rounded-xl border bg-white p-4 space-y-3">
  <h2 className="font-semibold">Cash in transit: {formatUSD(query.data?.total ?? 0)}</h2>
  <p className="text-sm text-muted-foreground">Included in net worth separately from bank balances. When a receiving balance changes, uncertain amounts stop counting until reconciled. This is a balance correction, not investment profit.</p>

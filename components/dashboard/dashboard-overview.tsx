@@ -366,7 +366,7 @@ export function DashboardOverview() {
 
   return (
     <section className="space-y-6 wb-fade-in">
-      <TransferOverview />
+      <TransferOverview compact />
       {/* Hero */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">

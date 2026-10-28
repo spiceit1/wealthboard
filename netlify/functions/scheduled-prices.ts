@@ -7,12 +7,12 @@ import { runPriceOnlySync } from "../../services/runFullSync";
 
 export const config = {
   /**
-   * Every 15 minutes on weekdays during a narrowed UTC window.
+   * Every 15 minutes daily; weekend invocations recover missing daily snapshots only.
    *
    * 13:00-21:59 UTC covers NY market hours (09:00-16:00) across DST changes
    * with at most one extra shoulder hour, which runtime gating still skips.
    */
-  schedule: "*/15 13-21 * * 1-5",
+  schedule: "*/15 13-21 * * *",
 };
 
 function json(body: unknown, status = 200) {
@@ -62,10 +62,10 @@ export default async (request: Request) => {
     const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday);
     const inWindow = isMarketWindowNy(hour, minute);
 
-    if (!force && (!isWeekday || !inWindow)) {
+    if (!force && !inWindow) {
       return json({
         skipped: true,
-        reason: "Outside weekday market window (09:00-16:00 America/New_York).",
+        reason: "Outside daily recovery window (09:00-16:00 America/New_York).",
         nyWeekday: weekday,
         nyHour: hour,
         nyMinute: minute,
@@ -107,7 +107,7 @@ export default async (request: Request) => {
     // Daily recovery rule: if today's 9:00 snapshot is missing, keep retrying full scheduled sync
     // during the intraday schedule window until daily snapshot is written.
     // Also retry if snapshot exists but Plaid cash balances are still stale.
-    if ((!existingDaily || !hasFreshCash || !hasFreshInvestments) && !withinRecoveryCooldown) {
+    if ((!existingDaily || (isWeekday && (!hasFreshCash || !hasFreshInvestments))) && !withinRecoveryCooldown) {
       const run = await dispatchBankSync({ URL: Netlify.env.get("URL"), APP_URL: Netlify.env.get("APP_URL"), INTERNAL_SYNC_TOKEN: Netlify.env.get("INTERNAL_SYNC_TOKEN") });
       return json({
         ...run,
@@ -119,6 +119,10 @@ export default async (request: Request) => {
         nyHour: hour,
         nyMinute: minute,
       });
+    }
+
+    if (!isWeekday && !force) {
+      return json({ skipped: true, mode: "weekend-recovery-only", nyDate, snapshotPresent: Boolean(existingDaily), withinRecoveryCooldown });
     }
 
     // Bank recovery cooldown must not suppress independent stock/crypto refreshes.
