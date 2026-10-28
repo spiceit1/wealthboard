@@ -1,3 +1,4 @@
+import { getInternalTransfers, transitAt } from "./internalTransfers";
 import { getBrokerageCashRows } from "./brokerageCash";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
@@ -105,6 +106,11 @@ function parseLocalTimeInZone(
   return new Date(utcMs);
 }
 
+function snapshotTime(date: string) {
+  const [y,m,d] = date.split('-').map(Number);
+  return parseLocalTimeInZone(y,m,d,9,0,0,'America/New_York');
+}
+
 export async function getDemoUserId() {
   try {
     const user = await db.query.users.findFirst({
@@ -130,8 +136,10 @@ export async function getDashboardData(userId: string) {
       }),
     ]);
 
+    const transfers = await getInternalTransfers(userId);
+    const adjust = <T extends { cash: string; total: string }>(row: T, at: Date): T => { const value = transitAt(transfers, at); return {...row, cash: String(Number(row.cash)+value), total: String(Number(row.total)+value)}; };
     const cashAccounts = [...bankAccounts, ...await getBrokerageCashRows(userId)];
-    const snapshots = await db
+    const rawSnapshots = await db
       .select({
         id: dailySnapshots.id,
         date: dailySnapshots.snapshotDate,
@@ -148,7 +156,8 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(dailySnapshots.snapshotDate))
       .limit(90);
 
-    const intradayRaw = await db
+    const snapshots = rawSnapshots.map(row => adjust(row, snapshotTime(row.date)));
+    const rawIntraday = await db
       .select({
         id: intradaySnapshots.id,
         capturedAt: intradaySnapshots.capturedAt,
@@ -162,7 +171,9 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(intradaySnapshots.capturedAt))
       .limit(300);
 
-    const liveCashTotal = cashAccounts.reduce((sum, row) => sum + Number(row.lastBalance), 0);
+    const intradayRaw = rawIntraday.map(row => adjust(row, row.capturedAt));
+    const cashInTransit = transitAt(transfers, new Date());
+    const liveCashTotal = cashAccounts.reduce((sum, row) => sum + Number(row.lastBalance), 0) + cashInTransit;
     const liveStocksTotal = stockHoldings.reduce((sum, row) => sum + Number(row.marketValue), 0);
     const liveCryptoTotal = cryptoHoldings.reduce((sum, row) => sum + Number(row.marketValue), 0);
     const liveTotal = liveCashTotal + liveStocksTotal + liveCryptoTotal;
@@ -231,7 +242,7 @@ export async function getDashboardData(userId: string) {
     const shouldAppendLiveIntradayPoint =
       summaryAsOf != null &&
       (() => {
-        const asOfDate = new Date(summaryAsOf);
+        const asOfDate = new Date(summaryAsOf ?? Date.now());
         if (!Number.isFinite(asOfDate.getTime())) return false;
         if (getNyDateKey(asOfDate) !== todayNy) return false;
         const { hour } = getNyHourMinute(asOfDate);
@@ -317,6 +328,7 @@ export async function getDashboardData(userId: string) {
       summary: latestSnapshot
         ? {
             date: latestSnapshot.date,
+            cashInTransit,
             cash: liveCashTotal,
             stocks: liveStocksTotal,
             crypto: liveCryptoTotal,
@@ -383,8 +395,10 @@ export async function getHistoryRows(userId: string) {
       .where(and(eq(dailySnapshots.userId, userId), eq(syncRuns.trigger, "scheduled")))
       .orderBy(desc(dailySnapshots.snapshotDate));
 
-    return rows.map((row, index) => {
-      const next = rows[index + 1];
+    const transfers = await getInternalTransfers(userId);
+    const adjusted = rows.map(row => { const amount = transitAt(transfers, snapshotTime(row.date)); return {...row, cash:String(Number(row.cash)+amount), total:String(Number(row.total)+amount)}; });
+    return adjusted.map((row, index) => {
+      const next = adjusted[index + 1];
       const total = toNumber(row.total);
       return {
         ...row,
@@ -411,9 +425,17 @@ export async function getSnapshotDetail(userId: string, date: string) {
       orderBy: (table, { asc: orderAsc }) => [orderAsc(table.category), orderAsc(table.label)],
     });
 
+    const transfers = await getInternalTransfers(userId);
+    const at = snapshotTime(date);
+    const amount = transitAt(transfers, at);
+    const transitItems = transfers.filter(row => transitAt([row], at)>0).map(row => ({
+      id:`transfer:${row.id}`, snapshotId:snapshot.id, accountId:null, holdingId:null,
+      category:"cash_account" as const, label:`Cash in transit: ${row.sourceLabel} → ${row.destinationLabel}`,
+      symbol:null, quantity:null, price:null, value:row.amount, meta:{reconciliation:true},
+    }));
     return {
-      snapshot,
-      items,
+      snapshot:{...snapshot,cashTotal:String(Number(snapshot.cashTotal)+amount),totalNetWorth:String(Number(snapshot.totalNetWorth)+amount)},
+      items:[...items,...transitItems],
     };
   } catch {
     return null;
@@ -424,7 +446,7 @@ export async function getTrendRows(userId: string, days: number) {
   const from = new Date();
   from.setDate(from.getDate() - days);
 
-  return db
+  const rows = await db
     .select({
       date: dailySnapshots.snapshotDate,
       total: dailySnapshots.totalNetWorth,
@@ -432,6 +454,8 @@ export async function getTrendRows(userId: string, days: number) {
     .from(dailySnapshots)
     .where(and(eq(dailySnapshots.userId, userId), gte(dailySnapshots.createdAt, from)))
     .orderBy(asc(dailySnapshots.snapshotDate));
+  const transfers = await getInternalTransfers(userId);
+  return rows.map(row => ({...row,total:String(Number(row.total)+transitAt(transfers,snapshotTime(row.date)))}));
 }
 
 export async function getSyncRuns(userId: string, options?: { limit?: number; offset?: number }) {

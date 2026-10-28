@@ -1,5 +1,6 @@
 "use client";
 
+import { TransferOverview } from "@/components/transfers/transfer-overview";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, RefreshCw } from "lucide-react";
 import {
@@ -218,7 +219,7 @@ export function DashboardOverview() {
     },
   });
 
-  const activeSummary = syncProgressQuery.data?.summary ?? dashboardQuery.data?.summary;
+  const activeSummary = dashboardQuery.data?.summary ?? syncProgressQuery.data?.summary;
 
   useEffect(() => {
     const status = syncProgressQuery.data?.status;
@@ -365,6 +366,7 @@ export function DashboardOverview() {
 
   return (
     <section className="space-y-6 wb-fade-in">
+      <TransferOverview />
       {/* Hero */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">

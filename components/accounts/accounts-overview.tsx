@@ -1,5 +1,6 @@
 "use client";
 
+import { TransferOverview } from "@/components/transfers/transfer-overview";
 import { ManualBalanceEditor } from "@/components/accounts/manual-balance-editor";
 
 import { useMemo } from "react";
@@ -89,6 +90,7 @@ export function AccountsOverview() {
 
   return (
     <>
+      <TransferOverview />
       <div className="grid gap-4 sm:grid-cols-1">
         <Card className="wb-card-hover">
           <CardHeader>

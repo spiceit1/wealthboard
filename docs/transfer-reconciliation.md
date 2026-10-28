@@ -1,0 +1,15 @@
+# Internal transfer reconciliation
+
+Bank balances, holdings and persisted snapshot totals remain source-reported. `internal_transfers` stores audited correction intervals. Dashboard, charts, daily history, snapshot details and trend exports apply the same intervals at read time. The daily snapshot baseline is 9am America/New_York, with DST conversion.
+
+Full bank syncs attempt a bounded 14-day Transactions read on linked depository Items. No transfer or order API is used. A pending USD inbound transfer may auto-count only when its description identifies one linked institution/account, a prior snapshot and current source cash show an exact drop matching the pending group, the receiving available-minus-current balance equals that group, and no recent source transfer is already tracked. Otherwise it is a review candidate. Multiple source accounts at one institution currently require review. Same-institution transfers and missing/unidentified feeds cannot be auto-detected. Provider transaction IDs prevent repeated imports; `pending_transaction_id` supports posting replacements. Matching by amount/name/date must be unique; equal-amount ambiguous rows remain under review.
+
+A changed destination balance alone never proves settlement. It immediately suspends inclusion on reads. Posted transaction evidence plus a changed receiving balance can close the entry automatically; mismatched feed/stored balances suspend reconciliation rather than overwrite balances. Intervals close at the first observed balance update where available. Posting dates alone never backdate a fill or assumed balance. Entries older than seven days stop counting and require review. No silent indefinite add-back.
+
+Dashboard and Accounts expose pending/review/closed entries. Owner confirmations explicitly attest the debit occurred and deposit is excluded, or deposit is now included. Confirmations start a new interval; receipt/dismissal closes it. Auth, origin checks, owner filtering and optimistic update checks apply.
+
+October 28 seed: $24,538 and $500 withdrawals from individual Robinhood to TD, confirmed by owner and screenshots. Correction begins at the first confirmed missing-balance snapshot, October 28 9am ET, not an invented withdrawal timestamp. Do not add $25,038 to stored account balances or snapshots: doing so would apply the correction twice.
+
+Limitations: detection is best effort at full bank syncs (not every 15-minute price sync), depends on Plaid transaction consent, availability and balance consistency. Uncertain, partial, failed, reversed or unidentified transfers require review. Bank balance changes unrelated to a transfer can conservatively suspend counting. Historical correction intervals preserve auditability and do not convert net-worth changes into investment-only returns.
+
+Validation: `node --import tsx tests/transfer-reconciliation.ts`, TypeScript, additive migration tested on `transfer-reconciliation-20261028` Neon branch. Production migration must precede code deployment.

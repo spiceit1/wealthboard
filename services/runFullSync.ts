@@ -1,3 +1,4 @@
+import { reconcileInternalTransfers } from "./internalTransfers";
 import { getBrokerageCashRows } from "./brokerageCash";
 import { syncInvestmentHoldings } from "./investmentHoldings";
 import { dispatchBankSync, hasFreshCashAsOfNyDay } from '../lib/bank-sync';
@@ -650,6 +651,9 @@ async function executeFullSync(
     for (const message of [...investments.results, ...investments.failures]) await pushEvent(message, "plaid");
     if (investments.failures.length) bankError = [bankError, ...investments.failures].filter(Boolean).join("; ");
 
+    try {
+      for (const message of await reconcileInternalTransfers(userId)) await pushEvent(message, "plaid");
+    } catch { await pushEvent("Transfer reconciliation unavailable; review cash in transit.", "plaid"); }
     await runPriceRefreshSteps(userId, pushEvent);
 
     await pushEvent("Calculating net worth");

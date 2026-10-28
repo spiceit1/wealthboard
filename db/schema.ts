@@ -350,3 +350,19 @@ export const dcaRevisions = pgTable("dca_revisions", {
   settings: jsonb("settings").$type<import("../lib/dca-settings").DcaSettings>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, t => ({ userVersion: uniqueIndex("dca_revisions_user_version_uidx").on(t.userId,t.version) }));
+
+// Reconciliation annotations; never alter the institution-reported balances.
+export const internalTransfers = pgTable("internal_transfers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceAccountId: uuid("source_account_id").notNull().references(() => accounts.id),
+  destinationAccountId: uuid("destination_account_id").notNull().references(() => accounts.id),
+  sourceLabel: text("source_label").notNull(), destinationLabel: text("destination_label").notNull(),
+  amount: numeric("amount", { precision: 16, scale: 2 }).notNull(),
+  transferDate: date("transfer_date").notNull(), status: text("status").notNull(),
+  destinationBalance: numeric("destination_balance", { precision: 16, scale: 2 }).notNull(),
+  transactionId: text("transaction_id"), evidence: text("evidence").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  intervals: jsonb("intervals").$type<import("../lib/transfer-reconciliation").TransitInterval[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => ({ dedupe: uniqueIndex("internal_transfers_user_dedupe").on(table.userId, table.dedupeKey) }));
