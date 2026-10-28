@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,10 +43,17 @@ async function fetchDetail(date: string): Promise<DetailResponse> {
   return response.json();
 }
 
+const snapshotStaleTime = 60_000;
+const snapshotGcTime = 30 * 60_000;
+
 export function HistoryDetailOverview({ date }: Props) {
+  const queryClient = useQueryClient();
+  const router = useRouter();
   const detailQuery = useQuery({
     queryKey: ["history-detail", date],
     queryFn: () => fetchDetail(date),
+    staleTime: snapshotStaleTime,
+    gcTime: snapshotGcTime,
   });
 
   const historyQuery = useQuery({
@@ -58,6 +67,20 @@ export function HistoryDetailOverview({ date }: Props) {
   const dates = [...new Set(historyQuery.data?.rows.map((row) => row.date) ?? [])].sort();
   const previousDate = dates.filter((value) => value < date).at(-1);
   const nextDate = dates.find((value) => value > date);
+  useEffect(() => {
+    if (!detailQuery.isSuccess) return;
+    for (const adjacentDate of [previousDate, nextDate]) {
+      if (!adjacentDate) continue;
+      router.prefetch(`/history/${adjacentDate}`);
+      void queryClient.prefetchQuery({
+        queryKey: ["history-detail", adjacentDate],
+        queryFn: () => fetchDetail(adjacentDate),
+        staleTime: snapshotStaleTime,
+        gcTime: snapshotGcTime,
+      });
+    }
+  }, [previousDate, nextDate, detailQuery.isSuccess, queryClient, router]);
+
   const navigation = (
     <nav aria-label="Daily snapshot navigation" className="flex flex-wrap items-center gap-2">
       {previousDate ? (
