@@ -6,7 +6,7 @@ type Row={id:string;amount:string;sourceLabel:string;destinationLabel:string;sta
 export function TransferOverview({ compact = false }: { compact?: boolean }) {
  const client=useQueryClient();
  const query=useQuery({queryKey:['transfers'],queryFn:async():Promise<{rows:Row[];total:number}>=>{const r=await fetch('/api/transfers',{cache:'no-store'});if(!r.ok)throw Error('Unable to load transfer reconciliation.');return r.json();},refetchInterval:30000});
- const update=useMutation({mutationFn:async({id,action}:{id:string;action:string})=>{const r=await fetch('/api/transfers',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});if(!r.ok)throw Error('Could not update transfer. Refresh and try again.');},onSuccess:()=>client.invalidateQueries()});
+ const update=useMutation({mutationFn:async({id,action}:{id:string;action:string})=>{const r=await fetch('/api/transfers',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});if(!r.ok){const body=await r.json().catch(()=>null);throw Error(body?.message ?? 'Could not update transfer. Please try again.');}},onSuccess:()=>client.invalidateQueries()});
  if(query.isError)return <p role="alert" className="text-sm text-amber-700">Transfer reconciliation could not load. Totals may need review. <button className="underline" onClick={()=>query.refetch()}>Retry</button></p>;
  const rows=query.data?.rows ?? [];
  if(!rows.length)return null;

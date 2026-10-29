@@ -1,4 +1,4 @@
-import { and, eq, desc, lt } from 'drizzle-orm';
+import { and, eq, desc, lt, sql, getTableColumns } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { accounts, internalTransfers, snapshotItems, dailySnapshots } from '@/db/schema';
 import { getBrokerageCashRows } from './brokerageCash';
@@ -8,7 +8,7 @@ import { collectCardTransactions } from '@/lib/credit-card';
 import { cents, closeTransit, transferState, transitAt, unambiguousCashDrop } from '@/lib/transfer-reconciliation';
 
 export async function getInternalTransfers(userId: string) {
-  const rows = await db.select().from(internalTransfers).where(eq(internalTransfers.userId, userId));
+  const rows = await db.select({...getTableColumns(internalTransfers), exactUpdatedAt:sql<string>`${internalTransfers.updatedAt}::text`}).from(internalTransfers).where(eq(internalTransfers.userId, userId));
   const banks = await db.select().from(accounts).where(eq(accounts.userId, userId));
   // Fail closed immediately if a newer bank balance may include the deposit.
   return rows.map(row => {
@@ -27,7 +27,7 @@ export async function reconcileInternalTransfers(userId: string) {
   const plaid = getPlaidClient();
   const linked = await db.select().from(accounts).where(and(eq(accounts.userId, userId), eq(accounts.includedInTotals, true)));
   const brokerCash = await getBrokerageCashRows(userId);
-  const existing = await db.select().from(internalTransfers).where(eq(internalTransfers.userId,userId));
+  const existing = await db.select({...getTableColumns(internalTransfers), exactUpdatedAt:sql<string>`${internalTransfers.updatedAt}::text`}).from(internalTransfers).where(eq(internalTransfers.userId,userId));
   const now = new Date();
   const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   const start = new Date(now.getTime()-14*86400000).toISOString().slice(0,10);
@@ -42,7 +42,7 @@ export async function reconcileInternalTransfers(userId: string) {
         // Do not combine a new transaction feed with an older stored balance.
         if (cents(dest.lastBalance)!==cents(bank.balances.current)) {
           for (const row of existing.filter(r=>r.destinationAccountId===dest.id && r.status==='in_transit')) {
-            await db.update(internalTransfers).set({status:'needs_review',intervals:closeTransit(row.intervals,cents(dest.lastBalance)!==cents(row.destinationBalance) ? dest.balanceAsOf ?? now : now),updatedAt:now}).where(and(eq(internalTransfers.id,row.id),eq(internalTransfers.userId,userId),eq(internalTransfers.updatedAt,row.updatedAt)));
+            await db.update(internalTransfers).set({status:'needs_review',intervals:closeTransit(row.intervals,cents(dest.lastBalance)!==cents(row.destinationBalance) ? dest.balanceAsOf ?? now : now),updatedAt:now}).where(and(eq(internalTransfers.id,row.id),eq(internalTransfers.userId,userId),sql`${internalTransfers.updatedAt} = ${row.exactUpdatedAt}::timestamptz`));
           }
           messages.push('Transfer reconciliation is waiting for matching bank balance and transaction data. Uncertain cash in transit is not counted.');
           continue;
@@ -60,7 +60,7 @@ export async function reconcileInternalTransfers(userId: string) {
           const changed = transferState(row,String(bank.balances.current),posted,now);
           const closureAt = cents(dest.lastBalance)!==cents(row.destinationBalance) ? dest.balanceAsOf ?? now : new Date(Math.min(now.getTime(),Date.parse(row.intervals.at(-1)?.from ?? now.toISOString())+7*86400000));
           const state = posted ? {...changed,status:'received',intervals:closeTransit(row.intervals,closureAt)} : changed.status!==row.status ? {...changed,intervals:closeTransit(row.intervals,closureAt)} : changed;
-          await db.update(internalTransfers).set({status:state.status,intervals:state.intervals,transactionId:match?.transaction_id ?? row.transactionId,updatedAt:now}).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,row.id),eq(internalTransfers.updatedAt,row.updatedAt)));
+          await db.update(internalTransfers).set({status:state.status,intervals:state.intervals,transactionId:match?.transaction_id ?? row.transactionId,updatedAt:now}).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,row.id),sql`${internalTransfers.updatedAt} = ${row.exactUpdatedAt}::timestamptz`));
         }
         // Auto-count only pending inbound transfers from a uniquely identifiable linked source,
         // excluded from current balance, with an exact independently observed source cash drop.

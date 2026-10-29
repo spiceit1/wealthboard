@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql, getTableColumns } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { accounts, internalTransfers } from '@/db/schema';
 import { getAuthorizedUserId } from '@/lib/owner-auth';
@@ -19,7 +19,7 @@ export async function PATCH(request:Request) {
   if (!userId) return NextResponse.json({message:'Sign in required.'},{status:401});
   const body=z.object({id:z.string().uuid(),action:z.enum(['confirm_in_transit','received','dismissed'])}).safeParse(await request.json().catch(()=>null));
   if (!body.success) return NextResponse.json({message:'Invalid transfer action'},{status:400});
-  const [row]=await db.select().from(internalTransfers).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,body.data.id)));
+  const [row]=await db.select({...getTableColumns(internalTransfers), exactUpdatedAt:sql<string>`${internalTransfers.updatedAt}::text`}).from(internalTransfers).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,body.data.id)));
   if (!row) return NextResponse.json({message:'Transfer not found'},{status:404});
   const [destination]=await db.select().from(accounts).where(and(eq(accounts.id,row.destinationAccountId),eq(accounts.userId,userId)));
   if (!destination) return NextResponse.json({message:'Destination not found'},{status:404});
@@ -30,7 +30,7 @@ export async function PATCH(request:Request) {
   const effective=(await getInternalTransfers(userId)).find(r=>r.id===row.id) ?? row;
   const intervals=closeTransit(effective.intervals,now);
   if (action==='confirm_in_transit') intervals.push({from:now.toISOString(),until:null});
-  const saved=await db.update(internalTransfers).set({status:action==='confirm_in_transit'?'in_transit':action,intervals,destinationBalance:destination.lastBalance,evidence:`${row.evidence}\nOwner confirmed ${action} at ${now.toISOString()}`,updatedAt:now}).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,row.id),eq(internalTransfers.updatedAt,row.updatedAt))).returning({id:internalTransfers.id});
+  const saved=await db.update(internalTransfers).set({status:action==='confirm_in_transit'?'in_transit':action,intervals,destinationBalance:destination.lastBalance,evidence:`${row.evidence}\nOwner confirmed ${action} at ${now.toISOString()}`,updatedAt:now}).where(and(eq(internalTransfers.userId,userId),eq(internalTransfers.id,row.id),sql`${internalTransfers.updatedAt} = ${row.exactUpdatedAt}::timestamptz`)).returning({id:internalTransfers.id});
   if (!saved.length) return NextResponse.json({message:"Transfer changed; refresh before confirming."},{status:409});
   return NextResponse.json({status:'ok'});
 }
