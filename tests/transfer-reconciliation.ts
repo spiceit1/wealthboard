@@ -21,3 +21,11 @@ assert.equal(unambiguousCashDrop(24538.35,.35,25038,0),false);
 assert.equal(unambiguousCashDrop(24538.35,.35,24538,24538),false);
 assert.equal(unambiguousCashDrop(100,101,1,0),false);
 console.log('Transfer reconciliation: timing, combined deposits, posting, changed balance, expiry, idempotent closure and ambiguous matches passed.');
+
+// The bank credit arrives during the 9am sync, before the snapshot is saved.
+// Using the nominal 9am schedule instead of capture time double-counted both deposits.
+const settled = [row, second].map(r => ({...r, intervals:[{from:'2026-10-28T13:00:00Z',until:'2026-10-29T13:00:45.853Z'}]}));
+assert.equal(transitAt(settled,new Date('2026-10-28T13:00:44.961Z')),25038);
+assert.equal(transitAt(settled,new Date('2026-10-29T13:00:50.442Z')),0);
+assert.equal(521186.10 + transitAt(settled,new Date('2026-10-29T13:00:50.442Z')),521186.10);
+assert.equal(Math.round((510519.63-521186.10)*100)/100,-10666.47);

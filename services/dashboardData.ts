@@ -106,11 +106,6 @@ function parseLocalTimeInZone(
   return new Date(utcMs);
 }
 
-function snapshotTime(date: string) {
-  const [y,m,d] = date.split('-').map(Number);
-  return parseLocalTimeInZone(y,m,d,9,0,0,'America/New_York');
-}
-
 export async function getDemoUserId() {
   try {
     const user = await db.query.users.findFirst({
@@ -156,7 +151,7 @@ export async function getDashboardData(userId: string) {
       .orderBy(desc(dailySnapshots.snapshotDate))
       .limit(90);
 
-    const snapshots = rawSnapshots.map(row => adjust(row, snapshotTime(row.date)));
+    const snapshots = rawSnapshots.map(row => adjust(row, row.createdAt));
     const rawIntraday = await db
       .select({
         id: intradaySnapshots.id,
@@ -384,6 +379,7 @@ export async function getHistoryRows(userId: string) {
     const rows = await db
       .select({
         date: dailySnapshots.snapshotDate,
+        createdAt: dailySnapshots.createdAt,
         cash: dailySnapshots.cashTotal,
         stocks: dailySnapshots.stocksTotal,
         crypto: dailySnapshots.cryptoTotal,
@@ -396,7 +392,7 @@ export async function getHistoryRows(userId: string) {
       .orderBy(desc(dailySnapshots.snapshotDate));
 
     const transfers = await getInternalTransfers(userId);
-    const adjusted = rows.map(row => { const amount = transitAt(transfers, snapshotTime(row.date)); return {...row, cash:String(Number(row.cash)+amount), total:String(Number(row.total)+amount)}; });
+    const adjusted = rows.map(row => { const amount = transitAt(transfers, row.createdAt); return {...row, cash:String(Number(row.cash)+amount), total:String(Number(row.total)+amount)}; });
     return adjusted.map((row, index) => {
       const next = adjusted[index + 1];
       const total = toNumber(row.total);
@@ -426,7 +422,7 @@ export async function getSnapshotDetail(userId: string, date: string) {
     });
 
     const transfers = await getInternalTransfers(userId);
-    const at = snapshotTime(date);
+    const at = snapshot.createdAt;
     const amount = transitAt(transfers, at);
     const transitItems = transfers.filter(row => transitAt([row], at)>0).map(row => ({
       id:`transfer:${row.id}`, snapshotId:snapshot.id, accountId:null, holdingId:null,
@@ -449,13 +445,14 @@ export async function getTrendRows(userId: string, days: number) {
   const rows = await db
     .select({
       date: dailySnapshots.snapshotDate,
+      createdAt: dailySnapshots.createdAt,
       total: dailySnapshots.totalNetWorth,
     })
     .from(dailySnapshots)
     .where(and(eq(dailySnapshots.userId, userId), gte(dailySnapshots.createdAt, from)))
     .orderBy(asc(dailySnapshots.snapshotDate));
   const transfers = await getInternalTransfers(userId);
-  return rows.map(row => ({...row,total:String(Number(row.total)+transitAt(transfers,snapshotTime(row.date)))}));
+  return rows.map(row => ({...row,total:String(Number(row.total)+transitAt(transfers,row.createdAt))}));
 }
 
 export async function getSyncRuns(userId: string, options?: { limit?: number; offset?: number }) {
