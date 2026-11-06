@@ -5,7 +5,7 @@ import { getBrokerageCashRows } from './brokerageCash';
 import { getPlaidClient } from '@/lib/plaid';
 import { getPlaidAccessTokensForUser } from './plaidTokens';
 import { collectCardTransactions } from '@/lib/credit-card';
-import { cents, closeTransit, transferState, transitAt, unambiguousCashDrop } from '@/lib/transfer-reconciliation';
+import { cents, closeTransit, transferState, transitAt, unambiguousCashDrop, reconcilePostedGroup } from '@/lib/transfer-reconciliation';
 
 export async function getInternalTransfers(userId: string) {
   const rows = await db.select({...getTableColumns(internalTransfers), exactUpdatedAt:sql<string>`${internalTransfers.updatedAt}::text`}).from(internalTransfers).where(eq(internalTransfers.userId, userId));
@@ -50,11 +50,48 @@ export async function reconcileInternalTransfers(userId: string) {
         const deadline = Date.now()+25000;
         const txs = await collectCardTransactions(async offset => { if(Date.now()>deadline) throw new Error("Transfer feed timed out"); return (await plaid.transactionsGet({access_token:token.accessToken,start_date:start,end_date:today,options:{account_ids:[bank.account_id],count:500,offset}},{timeout:12000})).data; });
         const incoming = txs.filter(t => t.account_id===bank.account_id && t.amount<0 && t.iso_currency_code==='USD');
-        const claimed = new Set<string>();
-        for (const row of existing.filter(r => r.destinationAccountId===dest.id && !['received','dismissed'].includes(r.status)).sort((a,b)=>a.id.localeCompare(b.id))) {
-          const matches = incoming.filter(t => !claimed.has(t.transaction_id) && cents(-t.amount)===cents(row.amount) && t.date>=row.transferDate && t.date<=new Date(Date.parse(row.transferDate)+7*86400000).toISOString().slice(0,10) && (t.transaction_id===row.transactionId || t.pending_transaction_id===row.transactionId || (t.name.toLowerCase().includes(row.sourceLabel.toLowerCase().split(' ')[0]))));
-          const match = matches.length===1 ? matches[0] : null;
-          if (match) claimed.add(match.transaction_id);
+        const rows = existing.filter(r => r.destinationAccountId===dest.id && !['received','dismissed'].includes(r.status));
+        const claimed = new Set(existing.filter(r => r.destinationAccountId===dest.id && r.status==='received' && r.transactionId).map(r => r.transactionId!));
+        const candidates = rows.map(row => ({
+          row,
+          matches: incoming.filter(t => !claimed.has(t.transaction_id) && cents(-t.amount)===cents(row.amount) && t.date>=row.transferDate && t.date<=new Date(Date.parse(row.transferDate)+7*86400000).toISOString().slice(0,10) && (t.transaction_id===row.transactionId || (row.transactionId !== null && t.pending_transaction_id===row.transactionId) || t.name.toLowerCase().includes(row.sourceLabel.toLowerCase().split(' ')[0]))),
+        }));
+        const matchCounts = new Map<string, number>();
+        for (const {matches} of candidates) {
+          for (const t of matches) matchCounts.set(t.transaction_id, (matchCounts.get(t.transaction_id) ?? 0) + 1);
+        }
+        const matched = candidates.map(({row,matches}) => ({
+          row,
+          match: matches.length===1 && matchCounts.get(matches[0].transaction_id)===1 ? matches[0] : null,
+        }));
+        for (const {matches} of candidates) for (const t of matches) claimed.add(t.transaction_id);
+        const balance = String(bank.balances.current);
+        const postedIds = new Map(matched.flatMap(({row,match}) => match && !match.pending ? [[row.id, match.transaction_id] as const] : []));
+        const group = reconcilePostedGroup(rows, balance, postedIds, dest.balanceAsOf ?? now);
+        if (group) {
+          // Apply the group in one statement, or leave it untouched if any row changed.
+          const values = sql.join(group.map((state, index) => sql`(
+            ${state.id}::uuid, ${rows[index].exactUpdatedAt}::timestamptz,
+            ${state.status}::text, ${state.destinationBalance}::numeric,
+            ${state.transactionId ?? matched[index].match?.transaction_id ?? null}::text,
+            ${JSON.stringify(state.intervals)}::jsonb
+          )`), sql`, `);
+          await db.execute(sql`
+            WITH changes(id, prior_updated_at, status, balance, transaction_id, intervals) AS (VALUES ${values}),
+            locked AS MATERIALIZED (
+              SELECT t.id FROM internal_transfers t JOIN changes c ON c.id=t.id
+              WHERE t.user_id=${userId}::uuid AND t.updated_at=c.prior_updated_at
+              ORDER BY t.id FOR UPDATE OF t
+            )
+            UPDATE internal_transfers t SET status=c.status, destination_balance=c.balance,
+              transaction_id=c.transaction_id, intervals=c.intervals, updated_at=${now.toISOString()}::timestamptz
+            FROM changes c JOIN locked l ON l.id=c.id
+            WHERE t.id=c.id AND (SELECT count(*) FROM locked)=${group.length}
+              AND EXISTS (SELECT 1 FROM accounts a WHERE a.id=${dest.id}::uuid
+                AND a.last_balance=${balance}::numeric)
+          `);
+        }
+        for (const {row,match} of group ? [] : matched) {
           // Retire only after posting AND a changed receiving balance, avoiding feed/balance lag.
           const posted = !!match && !match.pending && cents(bank.balances.current)!==cents(row.destinationBalance);
           const changed = transferState(row,String(bank.balances.current),posted,now);

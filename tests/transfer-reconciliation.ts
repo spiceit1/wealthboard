@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {transitAt,transferState,closeTransit,unambiguousCashDrop,type TransferRecord} from '../lib/transfer-reconciliation';
+import {cents,reconcilePostedGroup,transitAt,transferState,closeTransit,unambiguousCashDrop,type TransferRecord} from '../lib/transfer-reconciliation';
 const at=(s:string)=>new Date(`2026-10-28T${s}:00Z`);
 const row:TransferRecord={id:'one',amount:'24538',sourceAccountId:'source',destinationAccountId:'dest',sourceLabel:'Robinhood',destinationLabel:'TD',status:'in_transit',destinationBalance:'13921.12',transactionId:null,transferDate:'2026-10-27',intervals:[{from:at('13:00').toISOString(),until:null}],evidence:'Owner confirmed',updatedAt:at('13:00')};
 assert.equal(transitAt([row],at('12:59')),0);
@@ -29,3 +29,22 @@ assert.equal(transitAt(settled,new Date('2026-10-28T13:00:44.961Z')),25038);
 assert.equal(transitAt(settled,new Date('2026-10-29T13:00:50.442Z')),0);
 assert.equal(521186.10 + transitAt(settled,new Date('2026-10-29T13:00:50.442Z')),521186.10);
 assert.equal(Math.round((510519.63-521186.10)*100)/100,-10666.47);
+
+// Replay the three Coinbase withdrawals with TD receiving one at a time.
+let coinbase = ['10207.31', '9229.98', '4903.81'].map((amount, i) => ({
+  ...row, id: String(i), amount, sourceLabel: 'Coinbase', destinationBalance: '48278.82',
+}));
+let bank = 4827882;
+const combined = bank + cents(transitAt(coinbase, at('13:00')));
+for (const [i, expectedTransit] of [[1, 15111.12], [0, 4903.81], [2, 0]]) {
+  const prior = coinbase.find(r => r.id === String(i))!;
+  bank += cents(prior.amount);
+  const now = at(`1${4 + (i === 1 ? 0 : i === 0 ? 1 : 2)}:00`);
+  const next = reconcilePostedGroup(coinbase, (bank / 100).toFixed(2), new Map([[prior.id, 'posted-' + i]]), now);
+  assert.ok(next);
+  assert.equal(next.filter(r => r.status === 'received').length, 1);
+  assert.equal(next.find(r => r.id === prior.id)?.status, 'received');
+  assert.equal(transitAt(next, now), expectedTransit);
+  assert.equal(bank + cents(transitAt(next, now)), combined);
+  coinbase = next.filter(r => r.status === 'in_transit');
+}

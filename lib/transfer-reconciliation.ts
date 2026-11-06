@@ -23,3 +23,28 @@ export function transferState(row: TransferRecord, balance: string, posted: bool
 export function unambiguousCashDrop(previous: number, current: number, pending: number, alreadyTracked: number) {
   return pending > 0 && cents(previous - current) === cents(pending) && cents(alreadyTracked) === 0;
 }
+
+/** Rebase remaining transfers only when distinct posted deposits explain the entire balance change. */
+export function reconcilePostedGroup(
+  rows: TransferRecord[],
+  balance: string,
+  posted: ReadonlyMap<string, string>,
+  at: Date,
+): TransferRecord[] | null {
+  if (!rows.length || rows.some(row => row.status !== 'in_transit' ||
+      !row.intervals.at(-1) || row.intervals.at(-1)!.until ||
+      at.getTime() - Date.parse(row.intervals.at(-1)!.from) > 7 * 86400000)) return null;
+  const baseline = cents(rows[0].destinationBalance);
+  if (rows.some(row => cents(row.destinationBalance) !== baseline)) return null;
+  const settled = rows.filter(row => posted.has(row.id));
+  const amount = settled.reduce((sum, row) => sum + cents(row.amount), 0);
+  if (amount <= 0 || cents(balance) - baseline !== amount ||
+      new Set(settled.map(row => posted.get(row.id))).size !== settled.length) return null;
+
+  return rows.map(row => {
+    const transactionId = posted.get(row.id);
+    return transactionId
+      ? {...row, status: 'received', transactionId, intervals: closeTransit(row.intervals, at)}
+      : {...row, destinationBalance: balance};
+  });
+}
