@@ -14,7 +14,7 @@ export function TransferOverview({ compact = false }: { compact?: boolean }) {
  if(compact) {
   if(!active.length)return null;
   const needsReview=active.some(row=>row.status==='needs_review');
-  return <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2 text-sm"><p><strong>Cash in transit: {formatUSD(query.data?.total ?? 0)}</strong><span className="text-muted-foreground"> · {needsReview ? 'Some transfers need review' : 'Included in net worth · checked automatically when banks sync'}</span></p><a href="/accounts" className="shrink-0 underline">Transfer details</a></div>;
+  return <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2 text-sm"><p><strong>Cash in transit: {formatUSD(query.data?.total ?? 0)}</strong><span className="text-muted-foreground"> · {needsReview ? 'Some transfers need review' : 'Included in net worth as cash · checked automatically when banks sync'}</span></p><a href="/accounts" className="shrink-0 underline">Transfer details</a></div>;
  }
  return <div className="rounded-xl border bg-white p-4 space-y-3">
  <h2 className="font-semibold">Cash in transit: {formatUSD(query.data?.total ?? 0)}</h2>
