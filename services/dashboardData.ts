@@ -1,3 +1,4 @@
+import { explainNetWorthChange } from '@/lib/net-worth-change';
 import { getInternalTransfers, transitAt } from "./internalTransfers";
 import { getBrokerageCashRows } from "./brokerageCash";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -218,6 +219,14 @@ export async function getDashboardData(userId: string) {
       (previousNySnapshot ? toNumber(previousNySnapshot.crypto) : null) ??
       (latestSnapshot ? toNumber(latestSnapshot.crypto) : liveCryptoTotal);
 
+    const baselineCapturedAt = previousDayLastIntraday?.capturedAt ?? previousNySnapshot?.createdAt ?? latestSnapshot?.createdAt;
+    const changeExplanation = explainNetWorthChange(
+      { cash: baselineCash, transit: baselineCapturedAt ? transitAt(transfers, baselineCapturedAt) : cashInTransit,
+        stocks: baselineStocks, crypto: baselineCrypto, total: baselineForDailyChange },
+      { cash: liveCashTotal, transit: cashInTransit, stocks: liveStocksTotal,
+        crypto: liveCryptoTotal, total: liveTotal },
+    );
+
     const midnightBaselinePoint = (() => {
       if (!previousDayLastIntraday && !previousNySnapshot) return null;
       const [year, month, day] = todayNy.split("-").map((part) => Number(part));
@@ -324,6 +333,7 @@ export async function getDashboardData(userId: string) {
         ? {
             date: latestSnapshot.date,
             cashInTransit,
+            changeExplanation: {...changeExplanation, baselineCapturedAt: baselineCapturedAt?.toISOString() ?? null},
             cash: liveCashTotal,
             stocks: liveStocksTotal,
             crypto: liveCryptoTotal,

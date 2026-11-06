@@ -48,3 +48,17 @@ for (const [i, expectedTransit] of [[1, 15111.12], [0, 4903.81], [2, 0]]) {
   assert.equal(bank + cents(transitAt(next, now)), combined);
   coinbase = next.filter(r => r.status === 'in_transit');
 }
+
+import { explainNetWorthChange } from '../lib/net-worth-change';
+
+const originalBalance = {cash: 72619.92, transit: 24341.10, stocks: 399036.64, crypto: 17.81, total: 471674.37};
+let remainingTransit = cents(originalBalance.transit);
+for (const deposit of [9229.98, 10207.31, 4903.81]) {
+  const prior = {...originalBalance, transit: remainingTransit / 100};
+  remainingTransit -= cents(deposit);
+  const explanation = explainNetWorthChange(prior, {...prior, transit: remainingTransit / 100});
+  assert.equal(explanation.cash, deposit);
+  assert.equal(explanation.transit, -deposit);
+  assert.equal(explanation.cash + explanation.transit, 0);
+  assert.equal(explanation.other, 0);
+}

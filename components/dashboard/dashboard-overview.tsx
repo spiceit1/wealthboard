@@ -63,6 +63,9 @@ type DashboardResponse = {
     crypto: number;
     total: number;
     dailyChange: number;
+    changeExplanation?: ReturnType<typeof import('@/lib/net-worth-change').explainNetWorthChange> & {
+      baselineCapturedAt: string | null;
+    };
     cashDailyChange?: number;
     stocksDailyChange?: number;
     cryptoDailyChange?: number;
@@ -411,6 +414,41 @@ export function DashboardOverview() {
           </Button>
         </div>
       </div>
+
+      {dashboardQuery.data?.summary?.changeExplanation && (() => {
+        const explanation = dashboardQuery.data.summary.changeExplanation;
+        const signed = (value: number) => `${value > 0 ? "+" : ""}${formatUSD(value)}`;
+        const rows: Array<[string, number]> = [
+          ["Account cash, excluding transit", explanation.cash],
+          ["Cash in transit", explanation.transit],
+          ["Stocks", explanation.stocks],
+          ["Crypto", explanation.crypto],
+        ];
+        if (explanation.other !== 0) rows.push(["Other snapshot difference", explanation.other]);
+        return (
+          <details className="rounded-xl border bg-white px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium">Explain this change</summary>
+            <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 tabular-nums">
+              <dt>Starting net worth{explanation.baselineCapturedAt && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {formatDateTimeEastern(explanation.baselineCapturedAt)} ET
+                </span>
+              )}</dt>
+              <dd>{formatUSD(explanation.startingTotal)}</dd>
+              {rows.map(([label, value]) => (
+                <div key={label} className="contents"><dt>{label}</dt><dd>{signed(value)}</dd></div>
+              ))}
+              <dt className="font-medium">Net worth change</dt>
+              <dd className="font-medium">{signed(dailyChange)}</dd>
+              <dt>Current net worth</dt><dd>{formatUSD(dashboardQuery.data.summary.total)}</dd>
+            </dl>
+            <p className="mt-3 text-xs text-muted-foreground">
+              A reconciled deposit raises account cash and lowers cash in transit by the same amount.
+              Stock and crypto changes reflect prices and holding quantities. The saved totals do not separately identify trades, fees, or manual corrections.
+            </p>
+          </details>
+        );
+      })()}
 
       {isSyncing && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-primary">
