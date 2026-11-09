@@ -41,7 +41,7 @@ function BankHistory({ account }: { account: LinkedCard }) {
   const [search, setSearch] = useState("");
   const [direction, setDirection] = useState("all");
   const [limit, setLimit] = useState(50);
-  const history = useQuery({ queryKey: ["bank-transactions", account.itemId, account.accountId], queryFn: () => read<{ balance?: number | null; transactions: CardCharge[]; today: string; startDate: string; lastUpdated: string | null }>(`/api/bank-transactions?${new URLSearchParams({ itemId: account.itemId, accountId: account.accountId })}`), staleTime: 300000, refetchInterval: 300000, retry: false });
+  const history = useQuery({ queryKey: ["bank-transactions", account.itemId, account.accountId], queryFn: () => read<{ balance?: number | null; balanceCheckedAt?: string; transactions: CardCharge[]; today: string; startDate: string; lastUpdated: string | null }>(`/api/bank-transactions?${new URLSearchParams({ itemId: account.itemId, accountId: account.accountId })}`), staleTime: 300000, refetchInterval: 300000, retry: false });
   const refresh = <Button variant="outline" disabled={history.isFetching} onClick={() => history.refetch()}>{history.isFetching ? "Loading transactions…" : "Refresh transactions"}</Button>;
   if (!history.data) return <div className="space-y-3">{history.isPending ? <p role="status">Loading bank transaction history…</p> : <p role="alert">{history.error?.message}</p>}{refresh}<Link href="/connections" className="ml-3 underline">Manage connections</Link></div>;
   const { transactions, today, startDate, lastUpdated } = history.data;
@@ -57,6 +57,12 @@ function BankHistory({ account }: { account: LinkedCard }) {
   const outgoing = posted.filter(t => t.amount > 0).reduce((s, t) => s + Math.round(t.amount * 100), 0) / 100;
   const rows = monthly.filter(t => `${t.merchant} ${t.category}`.toLowerCase().includes(search.toLowerCase()) && (direction === "all" || (direction === "in" ? t.amount < 0 : t.amount > 0))).sort(transactionOrder);
   return <div className="space-y-5">
+    <Card><CardHeader><CardTitle>Current bank balance</CardTitle></CardHeader><CardContent>
+      <p className="text-2xl font-semibold tabular-nums">{history.data.balance != null ? money(history.data.balance, account.currency) : "Unavailable"}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{account.name}{account.mask ? ` · ending ${account.mask}` : ""}. Latest bank-reported posted balance, independent of the selected month.
+        {history.data.balanceCheckedAt && ` Checked ${formatDateTimeEastern(history.data.balanceCheckedAt)}.`}
+      </p>
+    </CardContent></Card>
     {refresh}{history.error && <p role="alert">Refresh failed: {history.error.message} Previously loaded transactions are shown.</p>}
     <p className="text-xs text-muted-foreground">Plaid last updated: {formatDateTimeEastern(lastUpdated, "Not reported")}. Checks every five minutes while this page is open. Refresh retrieves Plaid’s available history; banks may report new transactions later. A pending status comes from Plaid and can lag the bank’s own website, even after its balance includes the money.</p>
     <div className="flex flex-wrap gap-4">

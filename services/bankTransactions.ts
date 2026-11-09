@@ -45,5 +45,5 @@ export async function getBankTransactionHistory(userId: string, itemId: string, 
     if (Date.now() > deadline) throw new Error("History timed out");
     return (await plaid.transactionsGet({ access_token: token.accessToken, start_date: startDate, end_date: today, options: { account_ids: [accountId], count: 500, offset } }, { timeout: 10000 })).data;
   });
-  return { balance: account.balances.current, transactions: rows.filter(row => row.account_id === accountId).map(normalizeCharge), today, startDate, lastUpdated: item.data.status?.transactions?.last_successful_update ?? null };
+  return { balance: account.balances.current, balanceCheckedAt: new Date().toISOString(), transactions: rows.filter(row => row.account_id === accountId).map(normalizeCharge), today, startDate, lastUpdated: item.data.status?.transactions?.last_successful_update ?? null };
 }
